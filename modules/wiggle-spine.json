@@ -1,0 +1,415 @@
+// This is a Wiggleport module description file.
+// The format is JSON, but comments are allowed.
+
+{
+    // Modules support many of the same metadata keys you'll find in a packages.json file
+    "name": "wiggle-spine",
+    "version": "1.0.0",
+    "description": "Wiggle Spine is a USB 2.0 backplane for up to 7 modules",
+    "homepage": "http://wiggleport.org",
+    "license": "MIT",
+
+    // Besides the JSON description here, modules can include additional Verilog source files
+    "files": [ "wiggle-spine.v" ],
+
+    // The module's interface describes what sort of slot it fits into.
+    // Any time libwiggleport finds a matching container, this module can load automatically.
+    "interface": {
+
+        // In this case, we're looking for a particular USB bridge that libwigglespine knows how to support
+        "class": "usb-ftdi",
+        "detect": { "vendorId": 7504, "productId": 24810 },
+
+        "streams": {
+
+            "usbOut": {
+                "width": 8,
+                "rate": "outputClock",
+                "pattern": [
+                    [ "join",
+                        "outputControlStream",
+                        "mod7.outputDataStream",
+                        "mod6.outputDataStream",
+                        "mod5.outputDataStream",
+                        "mod4.outputDataStream",
+                        "mod3.outputDataStream",
+                        "mod2.outputDataStream",
+                        "mod1.outputDataStream" ]
+                ]
+            },
+
+            "usbIn": {
+                "width": 8,
+                "rate": "inputClock",
+                "pattern": [
+                    [ "join",
+                        "inputControlStream",
+                        "mod7.inputDataStream",
+                        "mod6.inputDataStream",
+                        "mod5.inputDataStream",
+                        "mod4.inputDataStream",
+                        "mod3.inputDataStream",
+                        "mod2.inputDataStream",
+                        "mod1.inputDataStream" ]
+                ]
+            }
+        }
+    },
+
+    /*
+     * Spine clocks
+     *
+     * These are the main input and output sample clocks shared by all modules.
+     * When a sync input is present, these clocks phase-lock to the input.
+     */
+
+    "clocks": {
+        "inputClock": {
+            "minRate": 2000000,
+            "maxRate": 28000000
+        },
+        "outputClock": {
+            "minRate": 2000000,
+            "maxRate": 28000000
+        },
+    },
+
+    /*
+     * Internal streams
+     */
+
+    "streams": {
+
+        /*
+         * Control streams
+         *
+         * In the byte-wide USB data streams, 7 of those 8 bits go directly
+         * to the submodules, but the eighth bit is used for various lower
+         * bandwidth control features, including the per-module I2C ports.
+         *
+         * This control stream is framed using a simple bit stuffing
+         * technique. The only place a group of three ones (111) may occur
+         * is a the beginning of each 256-bit frame. To avoid these sequences
+         * occurring elsewhere, several bit positions are always sent as zero.
+         */
+
+        "outputControlStream": {
+            "width": 1,
+            "rate": "outputClock",
+            "pattern": [
+                // First 8 bits start with the sync pattern
+                1, 1, 1, 0,                                 // Sync pattern and padding
+                [ "split", "outputTWIBitStream",            // One item from the TWI bit stream...
+                    [ "next", "outputTWIBitStream", 1],     //   Clock transition bit
+                    [ "next", "outputTWIBitStream", 1]],    //   Data bit
+                0,                                          // Padding
+                "dmx.bitStream",                            // Next bit of DMX serial data
+
+                // Every other 8 bit group in the frame begins with no sync pattern
+                [ "repeat", 31,
+                    0, 0, 0, 0,                                 // Padding
+                    [ "split", "outputTWIBitStream",            // One item from the TWI bit stream...
+                        [ "next", "outputTWIBitStream", 1],     //   Clock transition bit
+                        [ "next", "outputTWIBitStream", 1]],    //   Data bit
+                    0,                                          // Padding
+                    "dmx.bitStream",                            // Next bit of DMX serial data
+                ]
+            ]
+        },
+
+        "inputControlStream": {
+            "width": 1,
+            "rate": "inputClock",
+            "pattern": [
+                1, 1, 1, 0, "serialDataInStream", "serialClockEdgeInStream", 0, null,
+                [ "repeat", 31,
+                    null, 0, null, 0, "serialDataInStream", "serialClockEdgeInStream", 0, null
+                ]
+            ]
+        },
+
+        /*
+         * Internal I2C bus
+         *
+         * Each module is given a low-speed I2C port in order to do configuration
+         * tasks without having to multiplex the main serial port. The per-module
+         * I2C port is backed by a single shared I2C port here, tapped from the
+         * control stream.
+         *
+         * In each direction, we have a stream that encodes clock in the MSB and
+         * data in the LSB. The clock is encoded such that a "1" indicates the
+         * clock staying high while data transitions (start/stop), and a "0"
+         * indicates a clock pulse in which the data changes while the clock is low.
+         * This encoding allows an I2C clock rate of 1/8 the control stream rate.
+         */
+
+        "serialDataOutStream": {
+            "width": 1,
+
+
+        }
+
+    },
+
+    /*
+     * Internal logic
+     *
+     * This is where we can glue the control streams to the internal logic they're
+     * attached to, including each module's internal I2C port. We really only have
+     * one I2C port shared between all modules, but to provide module isolation and
+     * allow address overlap, the logic includes an I2C multiplexer.
+     */
+
+
+
+    /*
+     * Named components
+     *
+     * Objects within are referenced using "component.member" notation.
+     * Components may be used as attachment points for submodules.
+     * If a "class" is specified, automatic attachment will be attempted.
+     */
+
+    "components": {
+
+        /*
+         * Onboard peripheral: Isolated DMX512 transmitter
+         */
+
+        "dmx": {
+            "signals": {
+                // Gate drive waveforms for isolated DC power
+                "gate1": [ "fpga-io", 112 ],
+                "gate2": [ "fpga-io", 107 ],
+                // Outgoing serial data modulated with a carrier for the isolation circuit
+                "tx1": [ "fpga-io", 118 ],
+                "tx2": [ "fpga-io", 114 ]
+            },
+            "clocks": {
+                "baudClock": {
+                    "synchronous": "outputClock",
+                    "rate": 250000
+                },
+                "modulationClock": {
+                    "synchronous": "outputClock",
+                    "rate": 12000000
+                }
+            },
+            "streams": {
+                // Entire DMX packets, as byte arrays.
+                "packetStream": {
+                    "width": 4096,      // 512 slots, 8 bits each
+                    "buffer": 4,        // Several complete packets buffered
+                },
+                "bitStream": {
+                    "width": 1,
+                    "rate": "baudClock",
+                    // Generate the outgoing DMX serial stream
+                    "pattern": [
+                        [ "wait", "packetStream", 1 ],  // As long as the packet stream is empty, output "1" (idle)
+                        [ "repeat", 25, 0 ],            // Repeated "0" bits (break condition)
+                        [ "repeat", 3, 1 ],             // Repeated "1" bits (mark after break)
+                        0, [ "repeat", 8, 0 ], 1,1,     // Start code (0x00)
+                        [ "split", "packetStream",      // Take one item from "dmxPackets", and split it up as follows
+                            [ "repeat", 512,            // Same pattern for each of 512 DMX slots
+                                0,                      // Start bit
+                                [ "repeat", 8,          // Output 8 bits, one at a time (LSB first, same as buffered)
+                                    [ "next", "packetStream", 1 ]
+                                ],
+                                1, 1                    // Two stop bits
+                            ]
+                        ]
+                    ]
+                }
+            },
+            "logic": [
+                // Logic to drive the isolated power supply.
+                // This doesn't take any inputs other than the 12 MHz clock.
+                "dmx_gate_driver", {
+                    "clk12": "modulationClock",
+                    "out1": "gate1",
+                    "out2": "gate2"
+                },
+                // The modulator takes asynchronous serial data generated by the dmxBits stream
+                // pattern (in software) and in hardware it uses the 12 MHz clock to add modulation
+                // so the data can cross our isolation transformer while retaining good pulse shape.
+                "dmx_data_modulator", {
+                    "clk12": "modulationClock",
+                    "out1": "tx1",
+                    "out2": "tx2",
+                    "in": "dmxBits"
+                }
+            ]
+        },
+
+        /*
+         * Driver for onboard status LED
+         */
+
+        "led": {
+            "signals": {
+                // Active-low PWM drive signals for the onboard RGB LED
+                "red_n": [ "fpga-io", 93 ],
+                "green_n": [ "fpga-io", 90 ],
+                "blue_n": [ "fpga-io", 81 ],
+            },
+            "logic": [
+                "spine_led_controller", {
+                    "red_out": "red_n",
+                    "green_out": "green_n",
+                    "blue_out": "blue_n"
+                }
+            ]
+        },
+
+        /*
+         * Attachment points for 7 modules.
+         *
+         * In addition to the objects defined in the class template for wigglemod,
+         * we also define the specific I/O pins associated with each module.
+         */
+
+        "mod1": {
+            "class": "wigglemod",
+            "signals": {
+                "pin1": [ "fpga-io", 87 ],
+                "pin2": [ "fpga-io", 88 ],
+                "pin3": [ "fpga-io", 80 ],
+                "pin4": [ "fpga-io", 91 ],
+                "pin5": [ "fpga-io", 76 ],
+                "pin6": [ "fpga-io", 79 ],
+                "pin7": [ "fpga-io", 73 ],
+                "pin8": [ "fpga-io", 74 ]
+            }
+        },
+
+        "mod2": {
+            "class": "wigglemod",
+            "signals": {
+                "pin1": [ "fpga-io", 102 ],
+                "pin2": [ "fpga-io", 104 ],
+                "pin3": [ "fpga-io", 99 ],
+                "pin4": [ "fpga-io", 98 ],
+                "pin5": [ "fpga-io", 97 ],
+                "pin6": [ "fpga-io", 96 ],
+                "pin7": [ "fpga-io", 95 ],
+                "pin8": [ "fpga-io", 101 ]
+            }
+        },
+
+        "mod3": {
+            "class": "wigglemod",
+            "signals": {
+                "pin1": [ "fpga-io", 113 ],
+                "pin2": [ "fpga-io", 106 ],
+                "pin3": [ "fpga-io", 115 ],
+                "pin4": [ "fpga-io", 119 ],
+                "pin5": [ "fpga-io", 116 ],
+                "pin6": [ "fpga-io", 117 ],
+                "pin7": [ "fpga-io", 121 ],
+                "pin8": [ "fpga-io", 120 ]
+            }
+        },
+
+        "mod4": {
+            "class": "wigglemod",
+            "signals": {
+                "pin1": [ "fpga-io", 137 ],
+                "pin2": [ "fpga-io", 138 ],
+                "pin3": [ "fpga-io", 136 ],
+                "pin4": [ "fpga-io", 135 ],
+                "pin5": [ "fpga-io", 134 ],
+                "pin6": [ "fpga-io", 129 ],
+                "pin7": [ "fpga-io", 128 ],
+                "pin8": [ "fpga-io", 122 ]
+            }
+        },
+
+        "mod5": {
+            "class": "wigglemod",
+            "signals": {
+                "pin1": [ "fpga-io", 8 ],
+                "pin2": [ "fpga-io", 9 ],
+                "pin3": [ "fpga-io", 4 ],
+                "pin4": [ "fpga-io", 7 ],
+                "pin5": [ "fpga-io", 144 ],
+                "pin6": [ "fpga-io", 3 ],
+                "pin7": [ "fpga-io", 1 ],
+                "pin8": [ "fpga-io", 2 ]
+            }
+        },
+
+        "mod6": {
+            "class": "wigglemod",
+            "signals": {
+                "pin1": [ "fpga-io", 37 ],
+                "pin2": [ "fpga-io", 38 ],
+                "pin3": [ "fpga-io", 39 ],
+                "pin4": [ "fpga-io", 33 ],
+                "pin5": [ "fpga-io", 32 ],
+                "pin6": [ "fpga-io", 31 ],
+                "pin7": [ "fpga-io", 29 ],
+                "pin8": [ "fpga-io", 28 ]
+            }
+        },
+
+        "mod7": {
+            "class": "wigglemod",
+            "signals": {
+                "pin1": [ "fpga-io", 143 ],
+                "pin2": [ "fpga-io", 41 ],
+                "pin3": [ "fpga-io", 43 ],
+                "pin4": [ "fpga-io", 45 ],
+                "pin5": [ "fpga-io", 44 ],
+                "pin6": [ "fpga-io", 47 ],
+                "pin7": [ "fpga-io", 48 ],
+                "pin8": [ "fpga-io", 49 ]
+            }
+        }
+    },
+
+    /*
+     * Class prototypes
+     *
+     * Components with a "class" member extend the prototypes here,
+     * as if these objects were copied into each component.
+     */
+
+    "classes": {
+
+        /*
+         * Modules that plug into the Wiggle Spine, with 8 GPIOs and 3.3V, 5V, and 5-24V power.
+         * Like PMOD, but with a wider connector to carry the extra power rails.
+         */
+
+        "wigglemod" : {
+            "signals": {
+                // Internal two-wire interface port, available to each submodule's logic.
+                // This is like I2C, with a single bus controller and no clock stretching.
+                "scl_in": "wire",
+                "sda_in": "wire",
+                "sda_out": "wire",
+
+                // A shared counter runs parallel with all module serial ports, synchronized
+                // using the control stream. Modules can use this counter to generate sync
+                // signals for repeating patterns.
+                "outputCounter": "wire[7:0]",
+                "inputCounter": "wire[7:0]"
+            },
+            "streams": {
+                // Each module gets a full-duplex serial port at the agreed-upon clock rates
+                "outputDataStream": {
+                    "width": 1,
+                    "rate": "outputClock",
+                    "pattern": [ 0 ]         // Default is all zeroes, overridden when a module loads
+                },
+                "inputDataStream": {
+                    "width": 1,
+                    "rate": "inputClock",
+                    "pattern": [ null ]      // Default ignores all input, overridden when a module loads
+                }
+            }
+        }
+
+    }
+}
