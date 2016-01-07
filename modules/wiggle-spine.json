@@ -1,5 +1,13 @@
-// This is a Wiggleport module description file.
-// The format is JSON, but comments are allowed.
+/*
+ * This is a Wiggleport module description file.
+ * The format is JSON, but comments are allowed.
+ *
+ * Modules are wiggleport's unit of software pluggability, so typically one module
+ * will correspond to one circuit board you can plug into other boards.
+ *
+ * In this case the module is the "Wiggle Spine" backplane, and we provide
+ * up to seven attachment points for "wigglemod" modules.
+ */
 
 {
     // Modules support many of the same metadata keys you'll find in a packages.json file
@@ -9,48 +17,60 @@
     "homepage": "http://wiggleport.org",
     "license": "MIT",
 
-    // Besides the JSON description here, modules can include additional Verilog source files
+    /*
+     * Besides the JSON description here, modules can include additional Verilog source files.
+     * This is where the Verilog modules instantiated in the "logic" sections below come from.
+     */
     "files": [ "wiggle-spine.v" ],
 
-    // The module's interface describes what sort of slot it fits into.
-    // Any time libwiggleport finds a matching container, this module can load automatically.
+    /*
+     * Module interface
+     *
+     * The module's interface describes what sort of slot it fits into, and when it can load.
+     * If this module finds an attachment point with matching "class" and "detect" details,
+     * the other objects here will be added to that attachment point.
+     */
     "interface": {
 
         // In this case, we're looking for a particular USB bridge that libwigglespine knows how to support
         "class": "usb-ftdi",
         "detect": { "vendorId": 7504, "productId": 24810 },
 
+        /*
+         * The USB bridge provides byte-wide FIFO streams, one in each direction.
+         * Here we'll divide those byte streams into eight bit streams.
+         */
         "streams": {
 
-            "usbOut": {
+            "outputFIFOByteStream": {
                 "width": 8,
                 "rate": "outputClock",
                 "pattern": [
                     [ "join",
-                        "outputControlStream",
-                        "mod7.outputDataStream",
-                        "mod6.outputDataStream",
-                        "mod5.outputDataStream",
-                        "mod4.outputDataStream",
-                        "mod3.outputDataStream",
+                        "mod1.outputDataStream",    // Least significant bit
                         "mod2.outputDataStream",
-                        "mod1.outputDataStream" ]
+                        "mod3.outputDataStream",
+                        "mod4.outputDataStream",
+                        "mod5.outputDataStream",
+                        "mod6.outputDataStream",
+                        "mod7.outputDataStream",
+                        "outputControlStream" ]     // Most significant bit
                 ]
             },
 
-            "usbIn": {
+            "inputFIFOByteStream": {
                 "width": 8,
                 "rate": "inputClock",
                 "pattern": [
                     [ "join",
-                        "inputControlStream",
-                        "mod7.inputDataStream",
-                        "mod6.inputDataStream",
-                        "mod5.inputDataStream",
-                        "mod4.inputDataStream",
-                        "mod3.inputDataStream",
+                        "mod1.inputDataStream",     // Least significant bit
                         "mod2.inputDataStream",
-                        "mod1.inputDataStream" ]
+                        "mod3.inputDataStream",
+                        "mod4.inputDataStream",
+                        "mod5.inputDataStream",
+                        "mod6.inputDataStream",
+                        "mod7.inputDataStream",
+                        "inputControlStream" ]      // Most significant bit
                 ]
             }
         }
@@ -66,101 +86,81 @@
     "clocks": {
         "inputClock": {
             "minRate": 2000000,
-            "maxRate": 28000000
+            "maxRate": 28000000,
+            "syncWith": "externalClock"
         },
         "outputClock": {
-            "minRate": 2000000,
-            "maxRate": 28000000
+            "min": 2000000,
+            "max": 28000000,
+            "syncWith": "externalClock"
         },
     },
 
     /*
      * Internal streams
+     *
+     * In the byte-wide USB data streams, 7 of those 8 bits go directly
+     * to the submodules, but the eighth bit is used for various lower
+     * bandwidth control features, including the per-module I2C ports.
+     *
+     * This control stream is framed using a simple bit stuffing
+     * technique. The only place a group of three ones (111) may occur
+     * is a the beginning of each 256-bit frame. To avoid these sequences
+     * occurring elsewhere, several bit positions are always sent as zero.
+     *
+     * The control stream pattern must repeat at the same rate as our I2S
+     * clock to be useful as a sync mechanism, so it must be 48 clock
+     * cycles long or a mulitple thereof. (2 streams at 24-bit resolution)
      */
 
     "streams": {
-
-        /*
-         * Control streams
-         *
-         * In the byte-wide USB data streams, 7 of those 8 bits go directly
-         * to the submodules, but the eighth bit is used for various lower
-         * bandwidth control features, including the per-module I2C ports.
-         *
-         * This control stream is framed using a simple bit stuffing
-         * technique. The only place a group of three ones (111) may occur
-         * is a the beginning of each 256-bit frame. To avoid these sequences
-         * occurring elsewhere, several bit positions are always sent as zero.
-         */
-
         "outputControlStream": {
             "width": 1,
             "rate": "outputClock",
             "pattern": [
                 // First 8 bits start with the sync pattern
-                1, 1, 1, 0,                                 // Sync pattern and padding
-                [ "split", "outputTWIBitStream",            // One item from the TWI bit stream...
-                    [ "next", "outputTWIBitStream", 1],     //   Clock transition bit
-                    [ "next", "outputTWIBitStream", 1]],    //   Data bit
+                1, 1, 1,                                    // Sync pattern
                 0,                                          // Padding
-                "dmx.bitStream",                            // Next bit of DMX serial data
+                [ "split", "i2c.outputBitStream", 1],       // I2C Data bit
+                [ "split", "i2c.outputBitStream", 1],       // I2C Clock-transition bit
+                0,                                          // Padding
+                "dmx.bitStream"                             // Next item (1 bit) of DMX serial data
 
                 // Every other 8 bit group in the frame begins with no sync pattern
-                [ "repeat", 31,
-                    0, 0, 0, 0,                                 // Padding
-                    [ "split", "outputTWIBitStream",            // One item from the TWI bit stream...
-                        [ "next", "outputTWIBitStream", 1],     //   Clock transition bit
-                        [ "next", "outputTWIBitStream", 1]],    //   Data bit
-                    0,                                          // Padding
-                    "dmx.bitStream",                            // Next bit of DMX serial data
+                [ "repeat", 5,
+                    0,                                      // Padding
+                    0, 0,                                   // (Unallocated)
+                    0,                                      // Padding
+                    [ "split", "i2c.outputBitStream", 1],   // I2C Data bit
+                    [ "split", "i2c.outputBitStream", 1],   // I2C Clock-transition bit
+                    0,                                      // Padding
+                    "dmx.bitStream"                         // Next item (1 bit) of DMX serial data
                 ]
             ]
         },
-
         "inputControlStream": {
             "width": 1,
             "rate": "inputClock",
             "pattern": [
-                1, 1, 1, 0, "serialDataInStream", "serialClockEdgeInStream", 0, null,
+                // Match the same sync pattern as it comes back to us
+                1, 1, 1,                                    // Sync pattern
+                0,                                          // Padding
+                [ "split", "i2c.inputBitStream", 1],        // I2C Data bit
+                [ "split", "i2c.inputBitStream", 1],        // I2C Clock-transition bit
+                0,                                          // Padding
+                null,                                       // (Unallocated)
                 [ "repeat", 31,
-                    null, 0, null, 0, "serialDataInStream", "serialClockEdgeInStream", 0, null
+                    0,                                      // Padding
+                    null, null,                             // (Unallocated)
+                    0,                                      // Padding
+                    [ "split", "i2c.inputBitStream", 1],    // I2C Data bit
+                    [ "split", "i2c.inputBitStream", 1],    // I2C Clock-transition bit
+                    0,                                      // Padding
+                    null                                    // (Unallocated)
                 ]
             ]
-        },
-
-        /*
-         * Internal I2C bus
-         *
-         * Each module is given a low-speed I2C port in order to do configuration
-         * tasks without having to multiplex the main serial port. The per-module
-         * I2C port is backed by a single shared I2C port here, tapped from the
-         * control stream.
-         *
-         * In each direction, we have a stream that encodes clock in the MSB and
-         * data in the LSB. The clock is encoded such that a "1" indicates the
-         * clock staying high while data transitions (start/stop), and a "0"
-         * indicates a clock pulse in which the data changes while the clock is low.
-         * This encoding allows an I2C clock rate of 1/8 the control stream rate.
-         */
-
-        "serialDataOutStream": {
-            "width": 1,
-
-
         }
-
     },
-
-    /*
-     * Internal logic
-     *
-     * This is where we can glue the control streams to the internal logic they're
-     * attached to, including each module's internal I2C port. We really only have
-     * one I2C port shared between all modules, but to provide module isolation and
-     * allow address overlap, the logic includes an I2C multiplexer.
-     */
-
-
 
     /*
      * Named components
@@ -171,6 +171,85 @@
      */
 
     "components": {
+
+        /*
+         * Internal I2C bus
+         *
+         * Modules are given a low-speed I2C port in order to do configuration
+         * tasks without having to multiplex the main serial port. Each per-module
+         * I2C port is multiplexed into a single shared I2C bus here.
+         *
+         * (Why I2C? Mostly because it's common for our submodules to pass this
+         * on to a physical I2C port that's already present on some ADC or DAC.)
+         *
+         * In each direction, we have a 2 bit wide stream that encodes data in
+         * the first (least significant) bit and clock in the second (most
+         * significant) bit. The clock is encoded such that a "1" indicates the
+         * clock staying high while data transitions (start/stop), and a "0"
+         * indicates a clock pulse in which the data changes while clock is low.
+         *
+         *   Bus state | SCL       | SDA
+         *   --------- | --------- | ---------
+         *             |           |
+         *   b00 = 0   | 0         | unchanged      <-- Data bit 0, also part of stop condition
+         *             | 0         | 0
+         *             | 1         | 0
+         *             | 1         | 0
+         *             |           |
+         *   b01 = 1   | 0         | unchanged      <-- Data bit 1, also the ACK slot or
+         *             | 0         | 1                              part of a repeated start condition
+         *             | 1         | 1
+         *             | 1         | 1
+         *             |           |
+         *   b10 = 2   | 1         | 0              <-- Part of the start condition
+         *             |           |
+         *   b11 = 3   | 1         | 1              <-- Idle
+         *
+         *           Start:  [3, 2, bits...]
+         *            Stop:  [...bits, 1 (ack), 0, 3]
+         *  Repeated start:  [...bits, 1 (ack), 1, 2, bits...]
+         */
+
+        "i2c": {
+            "streams": {
+
+                "outputBitStream": {
+                    "width": 2,
+                    "pattern": [
+                        // Idle until a packet is ready
+                        ["wait", "outputPacketStream", 3],
+
+                        // Start condition
+                        3, 2,
+
+                        // This loop condition runs at least once, and repeats as long
+                        // as there's any partial item buffered in the named stream.
+                        ["repeat", ["until-aligned", "outputPacketStream"],
+
+                            // Take 2 bits at a time from the output packet
+                            ["split", "outputPacketStream", 2]
+                        ],
+
+                        // Stop condition
+                        0, 3
+                    ]
+                },
+
+                "outputPacketStream": {
+                },
+
+                "inputBitStream": {
+                    "width": 2,
+                    "pattern": [
+                        // Let's think more about how patterns work with variable-width streams...
+                        ["split", "inputI2CPacketStream", 2]
+                    ]
+                },
+            },
+            "logic": {
+
+            }
+        },
 
         /*
          * Onboard peripheral: Isolated DMX512 transmitter
@@ -187,11 +266,11 @@
             },
             "clocks": {
                 "baudClock": {
-                    "synchronous": "outputClock",
+                    "syncWith": "outputClock",
                     "rate": 250000
                 },
                 "modulationClock": {
-                    "synchronous": "outputClock",
+                    "syncWith": "outputClock",
                     "rate": 12000000
                 }
             },
@@ -199,7 +278,7 @@
                 // Entire DMX packets, as byte arrays.
                 "packetStream": {
                     "width": 4096,      // 512 slots, 8 bits each
-                    "buffer": 4,        // Several complete packets buffered
+                    "buffer": 16384,    // Size in bits, 4 complete packets buffered
                 },
                 "bitStream": {
                     "width": 1,
@@ -252,12 +331,20 @@
                 "red_n": [ "fpga-io", 93 ],
                 "green_n": [ "fpga-io", 90 ],
                 "blue_n": [ "fpga-io", 81 ],
+
+                // Internal I2C port, for configuring the PWM driver
+                "scl_in": "wire",
+                "sda_in": "wire",
+                "sda_out": "wire"
             },
             "logic": [
                 "spine_led_controller", {
                     "red_out": "red_n",
                     "green_out": "green_n",
-                    "blue_out": "blue_n"
+                    "blue_out": "blue_n",
+                    "scl_in": "scl_in",
+                    "sda_in": "sda_in",
+                    "sda_out": "sda_out",
                 }
             ]
         },
@@ -384,8 +471,7 @@
 
         "wigglemod" : {
             "signals": {
-                // Internal two-wire interface port, available to each submodule's logic.
-                // This is like I2C, with a single bus controller and no clock stretching.
+                // Each submodule has an internal I2C port for low-speed communication
                 "scl_in": "wire",
                 "sda_in": "wire",
                 "sda_out": "wire",
@@ -393,8 +479,8 @@
                 // A shared counter runs parallel with all module serial ports, synchronized
                 // using the control stream. Modules can use this counter to generate sync
                 // signals for repeating patterns.
-                "outputCounter": "wire[7:0]",
-                "inputCounter": "wire[7:0]"
+                "outputCounter": "wire[5:0]",
+                "inputCounter": "wire[5:0]"
             },
             "streams": {
                 // Each module gets a full-duplex serial port at the agreed-upon clock rates
@@ -410,6 +496,5 @@
                 }
             }
         }
-
     }
 }
