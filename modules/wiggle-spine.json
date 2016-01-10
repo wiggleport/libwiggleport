@@ -23,6 +23,10 @@
      */
     "files": [ "wiggle-spine.v" ],
 
+    "interface": "usb-ftdi",
+
+    // Probe sequence: insert commands into a stream queue, option to load if results match
+
     /*
      * Module interface
      *
@@ -30,10 +34,6 @@
      * If this module finds an attachment point with matching "class" and "detect" details,
      * the other objects here will be added to that attachment point.
      */
-    "interface": {
-
-        // In this case, we're looking for a particular USB bridge that libwigglespine knows how to support
-        "class": "usb-ftdi",
         "detect": { "vendorId": 7504, "productId": 24810 },
 
         /*
@@ -78,15 +78,83 @@
 
     /*
      * Spine clocks
-     *
-     * These are the main input and output sample clocks shared by all modules.
-     * When a sync input is present, these clocks phase-lock to the input.
      */
 
     "clocks": {
+
+        // Note that the Wiggle Spine board has two crystals: the 12 MHz
+        // crystal is only used for the USB interface. All other clocks
+        // are derived by the Si5351 synthesizer from this 25 MHz crystal.
+
+        "crystal": {
+            "frequency": 25000000
+        },
+
+        // Template for either of the PLL units on the Si5351 chip
+
+        "#pll-template": {
+            // Synthesized frequency, between 600 and 900 MHz
+            "frequency": [">=", 600000000, ["<=", 900000000,
+                ["*", "crystal.frequency",
+                    ["+", "multiplier.whole",
+                        ["/", "multiplier.numerator", "multiplier.denominator"]
+                    ]
+                ]
+            ]],
+
+            // Fractional multiplier
+            "multiplier": {
+                "whole": [">=", 15, ["<=", 90, "#int"]],
+                "numerator": [">=", 0, ["<", "denominator"], "#int"],
+                "denominator": 1000000
+                // ^ The data sheet claims, without further explanation,
+                //   that the VCXO requires a denominator of 10^6.
+                //   I suspect this is less of a hard requirement, and more
+                //   to make their PPM calculations work out nicely.
+            },
+
+            // Register values, calculated from the multipliers
+            "registers": {
+                "p1": ["+", ["*", 128, "multiplier.whole"], "fp128", -512],
+                "p2": ["-", ["*", 128, "multiplier.numerator"], ["*", "p3", "fp128"]],
+                "p3": "multiplier.denominator",
+                "fp128": ["//", ["*", 128, "multiplier.numerator"], "p3"]
+            }
+        },
+
+        // Two PLLs: One is used as a fixed-frequency reference,
+        // the other can track a sync input when that's present.
+
+        "referencePLL": "#pll-template",
+        "syncPLL": "#pll-template",
+
+
+
+
+
+        "clk1": {
+            ""
+        }
+
+
+
+        /*
+         * The USB input and output FIFOs each run at a variable rate, which
+         * libwigglespine determines based on the other sync'ed clocks and their
+         * constraints.
+         *
+         * These clocks determine the advancement rate of the input and output
+         * FIFO streams above, and the bandwidth available to the input and
+         * output data streams on each module.
+         */
+
         "inputClock": {
-            "minRate": 2000000,
-            "maxRate": 28000000,
+
+            "frequency": {
+                "min": 2000000,
+                "max": 28000000,
+            },
+
             "syncWith": "externalClock"
         },
         "outputClock": {
@@ -94,6 +162,13 @@
             "max": 28000000,
             "syncWith": "externalClock"
         },
+
+        /*
+         * These audio clocks are available for modules to use, and the sample
+         * This "sample clock" isn't used by the spine itself, but it's used by
+         * many of our modules. This is a To make it easy for multiple The spine also provides a shared "audio clock", which allows all
+         * modules that want it to share a single user-selectable clock.
+         */
     },
 
     /*
