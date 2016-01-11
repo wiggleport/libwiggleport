@@ -78,32 +78,54 @@
 
     /*
      * Spine clocks
+     *
+     * The Wiggle Spine board has two crystals: the 12 MHz
+     * crystal is only used for the USB interface. All other clocks
+     * are derived by the Si5351 synthesizer from this 25 MHz crystal.
+     *
+     * The Si5351 is a programmable clock synthesizer with up to 8
+     * outputs, 6 fractional dividers, 2 integer-only dividers, and
+     * 2 PLLs, one with an analog voltage control input we use for
+     * external clock sync.
+     *
+     * In this section we define several clocks that the rest of the
+     * system will have access to, based on our application of the
+     * Si5351's clock synth architecture.
+     *
+     * The individual wigglemods can indirectly affect the frequency
+     * of these clocks by placing additional constraints on derived
+     * values. This lets modules cooperate to share relatively few
+     * syntheiszed clocks.
      */
 
     "clocks": {
 
-        // Note that the Wiggle Spine board has two crystals: the 12 MHz
-        // crystal is only used for the USB interface. All other clocks
-        // are derived by the Si5351 synthesizer from this 25 MHz crystal.
-
         "crystal": {
-            "frequency": 25000000
+            // The Si5351 is specified for use with either
+            // a 25 MHz or a 27 MHz crystal; this board uses 25 MHz.
+            "frequency": 25000000,
         },
 
-        // Template for either of the PLL units on the Si5351 chip
+        "#fractional-divider-template": {
+            // Si5351 register value calculations common to all fractional dividers
+            "#fp128": ["//", ["*", 128, "fraction.numerator"], "p3"],
+            "p1": ["+", ["*", 128, "fraction.whole"], "#fp128", -512],
+            "p2": ["-", ["*", 128, "fraction.numerator"], ["*", "p3", "#fp128"]],
+            "p3": "fraction.denominator"
+        },
 
-        "#pll-template": {
-            // Synthesized frequency, between 600 and 900 MHz
-            "frequency": [">=", 600000000, ["<=", 900000000,
-                ["*", "crystal.frequency",
-                    ["+", "multiplier.whole",
-                        ["/", "multiplier.numerator", "multiplier.denominator"]
-                    ]
-                ]
-            ]],
-
-            // Fractional multiplier
-            "multiplier": {
+        /*
+         * Shared settings used for both of the PLLs
+         * (The center frequency of the voltage-controlled pllB will match
+         *  the nominal frequency of the reference pllA in our setup.)
+         */
+        "pll": {
+            // Oscillator is specified from 600-900 MHz
+            "frequency": [">=", 600e6, ["<=", 900e6,
+                            ["*", "crystal.frequency", "fraction.value"]]],
+            "registers": "#fractional-divider-template",
+            "fraction": {
+                "value": ["+", "whole", ["/", "numerator", "denominator"]],
                 "whole": [">=", 15, ["<=", 90, "#int"]],
                 "numerator": [">=", 0, ["<", "denominator"], "#int"],
                 "denominator": 1000000
@@ -111,30 +133,132 @@
                 //   that the VCXO requires a denominator of 10^6.
                 //   I suspect this is less of a hard requirement, and more
                 //   to make their PPM calculations work out nicely.
-            },
-
-            // Register values, calculated from the multipliers
-            "registers": {
-                "p1": ["+", ["*", 128, "multiplier.whole"], "fp128", -512],
-                "p2": ["-", ["*", 128, "multiplier.numerator"], ["*", "p3", "fp128"]],
-                "p3": "multiplier.denominator",
-                "fp128": ["//", ["*", 128, "multiplier.numerator"], "p3"]
             }
         },
 
-        // Two PLLs: One is used as a fixed-frequency reference,
-        // the other can track a sync input when that's present.
+        // Template for the Si5351 fractional divider units, MS0 through MS5
+        "#fractional-multisynth-template": {
+            "frequency": ["/", "pll.frequency", "fraction.value"],
+            "registers": "#fractional-divider-template",
+            "fraction": {
+                "value": [">=", 6, ["<=", 1800, ["+", "whole", ["/", "numerator", "denominator"]]]],
+                "whole": "#int",
+                "numerator": [">=", 0, ["<", "denominator"], "#int"],
+                "denominator": [">=", 1, ["<=", 1048575, "#int"]]
+            }
+        },
 
-        "referencePLL": "#pll-template",
-        "syncPLL": "#pll-template",
+        "ms0": "#fractional-multisynth-template",
+        "ms1": "#fractional-multisynth-template",
+        "ms2": "#fractional-multisynth-template",
+        "ms3": "#fractional-multisynth-template",
+        "ms4": "#fractional-multisynth-template",
+        "ms5": "#fractional-multisynth-template",
 
+        // Template for the Si5351 integer divider units MS6 and MS7
+        "#integer-multisynth-template": {
+            "frequency": ["/", "pll.frequency", "divisor"],
+            "divisor": [">=", 6, ["<=", 254, ["*", 2, "#int"]]]
+        },
 
+        "ms6": "#integer-multisynth-template",
+        "ms7": "#integer-multisynth-template",
 
+        /*
+         * After the MultiSynth units, each clock output has a programmable
+         * divide by a power of two (named R) between 1 and 128.
+         *
+         * These are the signals that map directly to FPGA I/O pins.
+         * Note that only clk0 and clk1 route directly to global input buffers.
+         */
 
+        "#r-divider-template": {
+            "value": ["<<", 1, "register"],
+            "register": [">=", 0, ["<=", 7, "#int"]]
+        },
+
+        "clk0": {
+            "frequency": ["/", "ms0.frequency", "r.value"],
+            "signal": ["#fpga-io", 20],
+            "r": "#r-divider-template"
+        },
 
         "clk1": {
-            ""
-        }
+            "frequency": ["/", "ms1.frequency", "r.value"],
+            "signal": ["#fpga-io", 21],
+            "r": "#r-divider-template"
+        },
+
+        "clk2": {
+            "frequency": ["/", "ms2.frequency", "r.value"],
+            "signal": ["#fpga-io", 25],
+            "r": "#r-divider-template"
+        },
+
+        "clk3": {
+            "frequency": ["/", "ms3.frequency", "r.value"],
+            "signal": ["#fpga-io", 26],
+            "r": "#r-divider-template"
+        },
+
+        "clk4": {
+            "frequency": ["/", "ms4.frequency", "r.value"],
+            "signal": ["#fpga-io", 11],
+            "r": "#r-divider-template"
+        },
+
+        "clk5": {
+            "frequency": ["/", "ms5.frequency", "r.value"],
+            "signal": ["#fpga-io", 12],
+            "r": "#r-divider-template"
+        },
+
+        "clk6": {
+            "frequency": ["/", "ms6.frequency", "r.value"],
+            "signal": ["#fpga-io", 19],
+            "r": "#r-divider-template"
+        },
+
+        "clk7": {
+            "frequency": ["/", "ms7.frequency", "r.value"],
+            "signal": ["#fpga-io", 24],
+            "r": "#r-divider-template"
+        },
+
+        /*
+         * The Wiggle Spine has two independent streams, 8 bits in and 8 bits out.
+         * Since they can run at different rates, we'd like different clocks.
+         * To optimize FPGA routing, these clocks will use CLK0 and CLK1 which
+         * route to global buffer inputs.
+         *
+         * The "primary" clocks are the physical ones that run from Si5351 to
+         * the FPGA, which may run at an arbitrary integer multiple of the
+         * actual stream clock, depending on module constraints.
+         */
+
+        "#int8-divider-template": {
+            "frequency": ["/", "primary.frequency", "divisor"],
+            "divisor": [">=", 1, "<=", 256, "#int"]
+        },
+
+        "output": {
+            "primary": { "frequency": "clk0.frequency" },
+            "stream": "#int8-divider-template"
+        },
+
+        "input": {
+            "primary": { "frequency": "clk1.frequency" },
+            "stream": "#int8-divider-template"
+        },
+
+        /*
+         * Most of our clocks will be derived from the voltage controlled
+         * PLLB, which may be locked to an external clock from the sync
+         * input. In order to have flexibility in the clock rates we generate
+         * and accept on the sync I/O ports, we use separate clock dividers
+         * for each. On the input side, we also 
+
+
 
 
 
