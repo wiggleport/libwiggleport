@@ -77,7 +77,7 @@
     },
 
     /*
-     * Spine clocks
+     * Clock generators
      *
      * The Wiggle Spine board has two crystals: the 12 MHz
      * crystal is only used for the USB interface. All other clocks
@@ -121,13 +121,13 @@
          */
         "pll": {
             // Oscillator is specified from 600-900 MHz
-            "frequency": [">=", 600e6, ["<=", 900e6,
+            "frequency": [":>=", 600e6, [":<=", 900e6,
                             ["*", "crystal.frequency", "fraction.value"]]],
             "registers": "#fractional-divider-template",
             "fraction": {
                 "value": ["+", "whole", ["/", "numerator", "denominator"]],
-                "whole": [">=", 15, ["<=", 90, "#int"]],
-                "numerator": [">=", 0, ["<", "denominator"], "#int"],
+                "whole": [":>=", 15, [":<=", 90, "#int"]],
+                "numerator": [":>=", 0, [":<", "denominator"], "#int"],
                 "denominator": 1000000
                 // ^ The data sheet claims, without further explanation,
                 //   that the VCXO requires a denominator of 10^6.
@@ -141,10 +141,10 @@
             "frequency": ["/", "pll.frequency", "fraction.value"],
             "registers": "#fractional-divider-template",
             "fraction": {
-                "value": [">=", 6, ["<=", 1800, ["+", "whole", ["/", "numerator", "denominator"]]]],
+                "value": [":>=", 6, [":<=", 1800, ["+", "whole", ["/", "numerator", "denominator"]]]],
                 "whole": "#int",
-                "numerator": [">=", 0, ["<", "denominator"], "#int"],
-                "denominator": [">=", 1, ["<=", 1048575, "#int"]]
+                "numerator": [":>=", 0, [":<", "denominator"], "#int"],
+                "denominator": [":>=", 1, [":<=", 1048575, "#int"]]
             }
         },
 
@@ -158,7 +158,7 @@
         // Template for the Si5351 integer divider units MS6 and MS7
         "#integer-multisynth-template": {
             "frequency": ["/", "pll.frequency", "divisor"],
-            "divisor": [">=", 6, ["<=", 254, ["*", 2, "#int"]]]
+            "divisor": [":>=", 6, [":<=", 254, ["*", 2, "#int"]]]
         },
 
         "ms6": "#integer-multisynth-template",
@@ -168,62 +168,117 @@
          * After the MultiSynth units, each clock output has a programmable
          * divide by a power of two (named R) between 1 and 128.
          *
-         * These are the signals that map directly to FPGA I/O pins.
+         * These are the clocks wired physically to FPGA I/O pins.
          * Note that only clk0 and clk1 route directly to global input buffers.
          */
 
         "#r-divider-template": {
             "value": ["<<", 1, "register"],
-            "register": [">=", 0, ["<=", 7, "#int"]]
+            "register": [":>=", 0, [":<=", 7, "#int"]]
         },
 
         "clk0": {
+            // Used as the primary output clock
+            // Globally buffered
             "frequency": ["/", "ms0.frequency", "r.value"],
-            "signal": ["#fpga-io", 20],
+            "port": ["#fpga-io", 20],
             "r": "#r-divider-template"
         },
 
         "clk1": {
+            // Used as the primary input clock
+            // Globally buffered
             "frequency": ["/", "ms1.frequency", "r.value"],
-            "signal": ["#fpga-io", 21],
+            "port": ["#fpga-io", 21],
             "r": "#r-divider-template"
         },
 
         "clk2": {
+            // Used as the sync reference clock
+            // All other clocks use PLLB (voltage-controlled),
+            // this one uses PLLA. (fixed frequency)
             "frequency": ["/", "ms2.frequency", "r.value"],
-            "signal": ["#fpga-io", 25],
+            "port": ["#fpga-io", 25],
             "r": "#r-divider-template"
         },
 
         "clk3": {
+            // Used as the sync input clock
+            // (same frequency as clk2, but different PLL)
             "frequency": ["/", "ms3.frequency", "r.value"],
-            "signal": ["#fpga-io", 26],
+            "port": ["#fpga-io", 26],
             "r": "#r-divider-template"
         },
 
         "clk4": {
+            // Used as the sync output clock
             "frequency": ["/", "ms4.frequency", "r.value"],
-            "signal": ["#fpga-io", 11],
+            "port": ["#fpga-io", 11],
             "r": "#r-divider-template"
         },
 
         "clk5": {
+            // (available)
             "frequency": ["/", "ms5.frequency", "r.value"],
-            "signal": ["#fpga-io", 12],
+            "port": ["#fpga-io", 12],
             "r": "#r-divider-template"
         },
 
         "clk6": {
+            // (available)
             "frequency": ["/", "ms6.frequency", "r.value"],
-            "signal": ["#fpga-io", 19],
+            "port": ["#fpga-io", 19],
             "r": "#r-divider-template"
         },
 
         "clk7": {
+            // (available)
             "frequency": ["/", "ms7.frequency", "r.value"],
-            "signal": ["#fpga-io", 24],
+            "port": ["#fpga-io", 24],
             "r": "#r-divider-template"
+        }
+    },
+
+    /*
+     * Inter-spine synchronization
+     * 
+     * Each Spine has a local clock (the VCXO, PLLB) which can
+     * glitchlessly track either our own internal reference or an
+     * external sync input signal.
+     *
+     * Concurrently, each spine provides a sync output signal based
+     * on its current reference clock. These sync inputs and outputs
+     * can be daisy-chained, with predictable lag between each spine.
+     */
+
+    "sync": {
+        
+        "output": {
+            "mainClock": "clocks.clk4",
+            "bitClock": {
+                // 16 Mbit upper limit on the optical transceivers
+                "frequency": [":<=", 16e6, ["/", "mainClock.frequency", "divisor"]],
+                "divisor": [":>=", 1, ":<=", 256, "#int"]
+            },
+            "port": ["#fpga-io", 139]
         },
+
+        "input": {
+            "mainClock": "clocks.clk3",
+            "referenceClock": "clocks.clk2",
+            "bitClock": {
+                "frequency": [":<=", 16e6, ["/",
+                                [":==", "mainClock.frequency",
+                                        "referenceClock.frequency"], "divisor"]],
+                "divisor": [":>=", 1, ":<=", 256, "#int"]
+            },
+            "port": ["#fpga-io", 105]
+        }
+    }
+
+
+
+
 
         /*
          * The Wiggle Spine has two independent streams, 8 bits in and 8 bits out.
@@ -238,7 +293,7 @@
 
         "#int8-divider-template": {
             "frequency": ["/", "primary.frequency", "divisor"],
-            "divisor": [">=", 1, "<=", 256, "#int"]
+            "divisor": [":>=", 1, ":<=", 256, "#int"]
         },
 
         "output": {
@@ -252,15 +307,17 @@
         },
 
         /*
-         * Most of our clocks will be derived from the voltage controlled
-         * PLLB, which may be locked to an external clock from the sync
-         * input. In order to have flexibility in the clock rates we generate
-         * and accept on the sync I/O ports, we use separate clock dividers
-         * for each. On the input side, we also 
+         */
 
-
-
-
+        "syncOutput": {
+            "frequency": "clk2.frequency"
+        },
+        "syncInput": {
+            "frequency": "clk3.frequency"
+        },
+        "syncReference": {
+            "frequency": [":==", "clk4.frequency", "syncInput.frequency"]
+        },
 
         /*
          * The USB input and output FIFOs each run at a variable rate, which
