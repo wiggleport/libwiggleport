@@ -1,29 +1,61 @@
-/*
- * This is a Wiggleport module description file.
- * The format is JSON, but comments are allowed.
- *
- * Modules are wiggleport's unit of software pluggability, so typically one module
- * will correspond to one circuit board you can plug into other boards.
- *
- * In this case the module is the "Wiggle Spine" backplane, and we provide
- * up to seven attachment points for "wigglemod" modules.
- */
-
+// JSON + comments
 {
-    // Modules support many of the same metadata keys you'll find in a packages.json file
     "name": "wiggle-spine",
     "version": "1.0.0",
     "description": "Wiggle Spine is a USB 2.0 backplane for up to 7 modules",
     "homepage": "http://wiggleport.org",
     "license": "MIT",
 
-    /*
-     * Besides the JSON description here, modules can include additional Verilog source files.
-     * This is where the Verilog modules instantiated in the "logic" sections below come from.
-     */
-    "files": [ "wiggle-spine.v" ],
+    "files": [
+        "wiggle-spine.v"
+    ],
 
-    "interface": "usb-ftdi",
+    /*
+     * Match the Wiggle Spine by its USB ID,
+     * and load the FTDI driver (part of libwigglespine)
+     *
+     * ID assignment from:
+     * http://wiki.openmoko.org/wiki/USB_Product_IDs
+     */
+
+    "class": "usb",
+    "driver": "libftdi",
+    "vendorId": 7504,    // 0x1d50
+    "productId": 24810,  // 0x60ea
+
+    "prototype": {
+
+        "ftdi": {
+
+            "states"
+
+            // How modal does this need to be?
+            // How specific to this application?  -- should FPGA be optional, maybe?
+                // This could allow using a bare FT2232H with no FPGA for some apps?
+
+
+            ""
+        },
+
+        "fpga": {
+        }
+
+
+    }
+
+
+    // breadcrumbs
+    // how does FPGA configuration work, & interact with module loading lifecycle?
+    // how does stream bind to prototype
+    // patterns for FPGA config
+
+    // fpga loader and fpga data stream coexist physically; different libftdi modes
+
+
+    // What makes a stream?
+
+    // When do actions start= probe, fpga recompile, reload, reload complete/error
+
 
     // Probe sequence: insert commands into a stream queue, option to load if results match
 
@@ -34,7 +66,7 @@
      * If this module finds an attachment point with matching "class" and "detect" details,
      * the other objects here will be added to that attachment point.
      */
-        "detect": { "vendorId": 7504, "productId": 24810 },
+        "detect": {  },
 
         /*
          * The USB bridge provides byte-wide FIFO streams, one in each direction.
