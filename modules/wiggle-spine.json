@@ -10,22 +10,144 @@
         "wiggle-spine.v"
     ],
 
-    /*
-     * Match the Wiggle Spine by its USB ID,
-     * and load the FTDI driver (part of libwigglespine)
-     *
-     * ID assignment from:
-     * http://wiki.openmoko.org/wiki/USB_Product_IDs
-     */
-
     "class": "usb",
-    "driver": "libftdi",
-    "vendorId": 7504,    // 0x1d50
-    "productId": 24810,  // 0x60ea
+    "usb": {
+        // Match the Wiggle Spine by its USB ID,
+        // http://wiki.openmoko.org/wiki/USB_Product_IDs
+        "vendorId": "0x1d50",
+        "productId": "0x60ea",
+        "deviceVersion": [":<=", "0x1000"],
+
+        "protocol": {
+            // Definitions for communicating with the FT2232H chip
+
+            "requestTypes": {
+                "endpointOut":        "0x00",
+                "endpointIn":         "0x80",
+                "usbStandard":        "0x00",
+                "usbClass":           "0x20",
+                "usbVendor":          "0x40",
+                "recipientDevice":    "0x00",
+                "recipientInterface": "0x01",
+                "recipientEndpoint":  "0x02",
+                "ftdiOut": ["|", "endpointOut", "usbVendor", "recipientDevice"],
+                "ftdiIn":  ["|", "endpointIn", "usbVendor", "recipientDevice"]
+            },
+
+            "requestIds": {
+                "reset":            "0x00",
+                "setModemControl":  "0x01",
+                "setFlowControl":   "0x02",
+                "setBaudrate":      "0x03",
+                "setData":          "0x04",
+                "pollModemStatus":  "0x05",
+                "setEventChar":     "0x06",
+                "setErrorChar":     "0x07",
+                "setLatencyTimer":  "0x09",
+                "getLatencyTimer":  "0x0a",
+                "setBitmode":       "0x0b",
+                "readPins":         "0x0c"
+            },
+
+            "resetTypes": {
+                "sio": 0,
+                "purgeRx": 1,
+                "purgeTx": 2
+            },
+
+            "interfaces": {
+                "a": 1,
+                "b": 2
+            },
+
+            "requests": {
+                "reset": {
+                    "requestType": "requestTypes.ftdiOut",
+                    "requestId": "requestIds.reset",
+                    "valueWord": "resetTypes.sio",
+                    "indexWord": "interfaces.a"
+                },
+                "purgeRx": {
+                    "requestType": "requestTypes.ftdiOut",
+                    "requestId": "requestIds.reset",
+                    "valueWord": "resetTypes.purgeRx",
+                    "indexWord": "interfaces.a"
+                },
+                "purgeTx": {
+                    "requestType": "requestTypes.ftdiOut",
+                    "requestId": "requestIds.reset",
+                    "valueWord": "resetTypes.purgeTx",
+                    "indexWord": "interfaces.a"
+                }
+            }
+        },
+
+        "modes": {
+            // Each mode is a mutually exclusive operating state (per USB device)
+            // We use the FT2232H chip differently in each mode.
+
+            "configuration": {
+                // For configuring the FPGA, we use Interface B in MPSSE mode
+
+                "setup": [
+                    "usb.protocol.requests.reset",
+                    "usb.protocol.requests.purgeRx",
+                    "usb.protocol.requests.purgeTx",
+
+                ],
+
+                "streams": [
+                ]
+            },
+
+            "normal": {
+                // In normal operation, we use high speed synchronous FIFO mode.
+                // This is on Interface A, but it takes over the internal resources
+                // used by both interfaces.
+
+                "setup": [
+                ],
+
+                "streams": [
+                ]
+            }
+        }
+    },
+
+    "fpga": {
+        "driver": "ice40",
+        "device": "1k",
+        "package": "tq144",
+        "configStream": "usbInterface."
+    },
+
+    "streams": [
+        "usbInterface.outputFIFO",
+
+    ],
 
     "prototype": {
 
-        "ftdi": {
+        "usbInterface": {
+
+            "outputFIFO": {
+                "endpoint": 0,
+            }
+
+            "inputFIFO": {
+                "endpoint": 0,
+            }
+
+            "configOut": {
+                "endpoint": 0,
+            }
+
+            "configIn": {
+                "endpoint": 0,
+            }
+
+
+            ""
 
             "states"
 
