@@ -10,77 +10,180 @@
         "wiggle-spine.v"
     ],
 
+    // Match a USB device made available to us by libwigglespine's USB driver
     "class": "usb",
-    "usb": {
-        // Match the Wiggle Spine by its USB ID,
-        // http://wiki.openmoko.org/wiki/USB_Product_IDs
+    "match": {
+        // Match the Wiggle Spine by its USB ID (http://wiki.openmoko.org/wiki/USB_Product_IDs)
         "vendorId": "0x1d50",
         "productId": "0x60ea",
-        "deviceVersion": [":<=", "0x1000"],
+        // Leave versions 4.0 and later reserved for future hardware configurations
+        "deviceVersion": [":<=", "0x400", "#int"],
+    },
 
-        "protocol": {
-            // Definitions for communicating with the FT2232H chip
+    // Tasks are units of functionality that can start and stop independently
+    "tasks": {
 
-            "requestTypes": {
-                "endpointOut":        "0x00",
-                "endpointIn":         "0x80",
-                "usbStandard":        "0x00",
-                "usbClass":           "0x20",
-                "usbVendor":          "0x40",
-                "recipientDevice":    "0x00",
-                "recipientInterface": "0x01",
-                "recipientEndpoint":  "0x02",
-                "ftdiOut": ["|", "endpointOut", "usbVendor", "recipientDevice"],
-                "ftdiIn":  ["|", "endpointIn", "usbVendor", "recipientDevice"]
-            },
+        // Generate and send an FPGA bitstream
+        "synthesis": {
+            "driver": "ice40",   // libwiggleport knows how to use yosys, arachne-pnr, and icestorm
+            "device": "1k",      // FPGA size; there's also an 8k available
+            "package": "tq144",
 
-            "requestIds": {
-                "reset":            "0x00",
-                "setModemControl":  "0x01",
-                "setFlowControl":   "0x02",
-                "setBaudrate":      "0x03",
-                "setData":          "0x04",
-                "pollModemStatus":  "0x05",
-                "setEventChar":     "0x06",
-                "setErrorChar":     "0x07",
-                "setLatencyTimer":  "0x09",
-                "getLatencyTimer":  "0x0a",
-                "setBitmode":       "0x0b",
-                "readPins":         "0x0c"
-            },
+            // When we finish, the new bitstream goes here
+            "bitstream": "fpga.configurationBuffer",
 
-            "resetTypes": {
-                "sio": 0,
-                "purgeRx": 1,
-                "purgeTx": 2
-            },
+            "inputs": [
+                "dmx.logic",
+                "sync.logic",
+                "usb.logic",
+                "mod1.logic",
+                "mod2.logic",
+                "mod3.logic",
+                "mod4.logic",
+                "mod5.logic",
+                "mod6.logic",
+                "mod7.logic"
+            ]
+        },
 
-            "interfaces": {
-                "a": 1,
-                "b": 2
-            },
-
-            "requests": {
-                "reset": {
-                    "requestType": "requestTypes.ftdiOut",
-                    "requestId": "requestIds.reset",
-                    "valueWord": "resetTypes.sio",
-                    "indexWord": "interfaces.a"
+        // Configuring the FPGA, using the FT2232H chip in MPSSE mode
+        "configuration": {
+            "driver": "usb",
+            "condition": ["==", "fpga.configured", false],
+            "control": [
+                "usb.protocol.requests.reset",
+                "usb.protocol.requests.purgeRx",
+                "usb.protocol.requests.purgeTx",
+            ],
+            "bulk": [
+                {
+                    "endpoint": "ftdi.protocol.interfaces.b.endpoints.out",
+                    "stream": {
+                        "pattern": [],
+                    }
                 },
-                "purgeRx": {
-                    "requestType": "requestTypes.ftdiOut",
-                    "requestId": "requestIds.reset",
-                    "valueWord": "resetTypes.purgeRx",
-                    "indexWord": "interfaces.a"
-                },
-                "purgeTx": {
-                    "requestType": "requestTypes.ftdiOut",
-                    "requestId": "requestIds.reset",
-                    "valueWord": "resetTypes.purgeTx",
-                    "indexWord": "interfaces.a"
+                {
+                    "endpoint": "ftdi.protocol.interfaces.b.endpoints.in",
+                    "stream": {
+                        "match"
+
+                           // How does this mesh with output patterns starting and stopping?
+                           // is there a way to match beginning of stream?
+                           // circular vs. linear patterns
+                           // How does this interact with detection?
+                           //    (think about default content of wigglemod class)
+                    }
                 }
+            ]
+        },
+
+        // Streaming data to and from the FPGA, using the FT2232H in synchronous FIFO mode
+        "streaming": {
+            "driver": "usb",
+            "condition": ["==", "fpga.configured", true],
+            "bulk": [
+                {
+                    "stream": "ftdi.streams.outputFIFO",
+                    "endpoint": "ftdi.protocol.interfaces.a.endpoints.out"
+                },
+                {
+                    "stream": "ftdi.streams.inputFIFO",
+                    "endpoint": "ftdi.protocol.interfaces.a.endpoints.in"
+                }
+            ],
+            "control": [
+
+            ],
+        }
+
+    },
+
+    "prototype": {
+
+        "fpga": {
+            "configured": "#bool",
+
+            "configurationBuffer": {
+                "width": 257760,
+                "buffer": 2
             }
         },
+
+        "ftdi": {
+
+            "streams": {
+                "mpsse": {
+                    "pattern": [
+                        "#mpsse-foo",
+                        "fpga.bitstream",
+                        "#mpsse-foo"
+                    ]
+                }
+            },
+
+            "protocol": {
+                // Definitions for communicating with the FT2232H chip
+
+                "requestTypes": {
+                    "endpointOut":        "0x00",
+                    "endpointIn":         "0x80",
+                    "usbStandard":        "0x00",
+                    "usbClass":           "0x20",
+                    "usbVendor":          "0x40",
+                    "recipientDevice":    "0x00",
+                    "recipientInterface": "0x01",
+                    "recipientEndpoint":  "0x02",
+                    "ftdiOut": ["|", "endpointOut", "usbVendor", "recipientDevice"],
+                    "ftdiIn":  ["|", "endpointIn", "usbVendor", "recipientDevice"]
+                },
+
+                "requestIds": {
+                    "reset":            "0x00",
+                    "setModemControl":  "0x01",
+                    "setFlowControl":   "0x02",
+                    "setBaudrate":      "0x03",
+                    "setData":          "0x04",
+                    "pollModemStatus":  "0x05",
+                    "setEventChar":     "0x06",
+                    "setErrorChar":     "0x07",
+                    "setLatencyTimer":  "0x09",
+                    "getLatencyTimer":  "0x0a",
+                    "setBitmode":       "0x0b",
+                    "readPins":         "0x0c"
+                },
+
+                "resetTypes": {
+                    "sio": 0,
+                    "purgeRx": 1,
+                    "purgeTx": 2
+                },
+
+                "interfaces": {
+                    "a": 1,
+                    "b": 2
+                },
+
+                "requests": {
+                    "reset": {
+                        "requestType": "requestTypes.ftdiOut",
+                        "requestId": "requestIds.reset",
+                        "valueWord": "resetTypes.sio",
+                        "indexWord": "interfaces.a"
+                    },
+                    "purgeRx": {
+                        "requestType": "requestTypes.ftdiOut",
+                        "requestId": "requestIds.reset",
+                        "valueWord": "resetTypes.purgeRx",
+                        "indexWord": "interfaces.a"
+                    },
+                    "purgeTx": {
+                        "requestType": "requestTypes.ftdiOut",
+                        "requestId": "requestIds.reset",
+                        "valueWord": "resetTypes.purgeTx",
+                        "indexWord": "interfaces.a"
+                    }
+                }
+            },
 
         "modes": {
             // Each mode is a mutually exclusive operating state (per USB device)
@@ -90,9 +193,6 @@
                 // For configuring the FPGA, we use Interface B in MPSSE mode
 
                 "setup": [
-                    "usb.protocol.requests.reset",
-                    "usb.protocol.requests.purgeRx",
-                    "usb.protocol.requests.purgeTx",
 
                 ],
 
@@ -116,9 +216,6 @@
 
     "fpga": {
         "driver": "ice40",
-        "device": "1k",
-        "package": "tq144",
-        "configStream": "usbInterface."
     },
 
     "streams": [
@@ -126,7 +223,6 @@
 
     ],
 
-    "prototype": {
 
         "usbInterface": {
 
