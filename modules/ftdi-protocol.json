@@ -1,0 +1,141 @@
+// JSON + comments
+{
+    "name": "ftdi-protocol",
+    "version": "1.0.0",
+    "description": "Definitions for the USB protocol used by FTDI serial/parallel interface chips",
+
+    // This class can be instantiated locally by interface boards that use FTDI chips
+    "class": "ftdi-protocol",
+    "prototype": {
+
+        "requestTypes": {
+            // USB standard request types
+            "endpointOut":        "0x00",
+            "endpointIn":         "0x80",
+            "usbStandard":        "0x00",
+            "usbClass":           "0x20",
+            "usbVendor":          "0x40",
+            "recipientDevice":    "0x00",
+            "recipientInterface": "0x01",
+            "recipientEndpoint":  "0x02",
+
+            // Combinations used for normal FTDI requests
+            "ftdiOut": ["|", "endpointOut", "usbVendor", "recipientDevice"],
+            "ftdiIn":  ["|", "endpointIn", "usbVendor", "recipientDevice"]
+        },
+
+        "requestIds": {
+            "reset":            "0x00",
+            "setModemControl":  "0x01",
+            "setFlowControl":   "0x02",
+            "setBaudrate":      "0x03",
+            "setData":          "0x04",
+            "pollModemStatus":  "0x05",
+            "setEventChar":     "0x06",
+            "setErrorChar":     "0x07",
+            "setLatencyTimer":  "0x09",
+            "getLatencyTimer":  "0x0a",
+            "setBitmode":       "0x0b",
+            "readPins":         "0x0c",
+            "readEEPROM":       "0x90",
+            "writeEEPROM":      "0x91",
+            "eraseEEPROM":      "0x92"
+        },
+
+        "resetTypes": {
+            "sio": 0,
+            "purgeRx": 1,
+            "purgeTx": 2
+        },
+
+        "flowControlTypes": {
+            "disabled": ["<<", 0, 8],
+            "rtscts":   ["<<", 1, 8],
+            "dtrdsr":   ["<<", 2, 8],
+            "xonxoff":  ["<<", 4, 8]
+        },
+
+        "bitmodes": {
+            "normal":       "0x00",
+            "asyncBitbang": "0x01",
+            "mpsse":        "0x02",
+            "syncBitbang":  "0x04",
+            "cpuMode":      "0x08",
+            "opto":         "0x10",
+            "cbus":         "0x20",
+            "syncFIFO":     "0x40",
+            "ft1284":       "0x80"
+        },
+
+        // FTDI chips with multiple interfaces identify them
+        // by distinct bulk endpoint numbers and request index values.
+        "interfaces": {
+            "a": {
+                "index": 1,
+                "endpoints": { "in": "0x81", "out": "0x02" }
+            },
+            "b": {
+                "index": 2,
+                "endpoints": { "in": "0x83", "out": "0x04" }
+            },
+            "c": {
+                "index": 3,
+                "endpoints": { "in": "0x85", "out": "0x06" }
+            },
+            "d": {
+                "index": 4,
+                "endpoints": { "in": "0x87", "out": "0x08" }
+            }
+        },
+
+        // Multi-Protocol Synchronous Serial Engine commands
+        "mpsse": {
+
+            // Bits for building data shift commands
+            "negativeWriteClock": "0x01",
+            "positiveWriteClock": "0x00",
+            "bitTransferMode": "0x02",          // One-byte length parameter
+            "byteTransferMode": "0x00",         // Two-byte little endian length parameter
+            "negativeReadClock": "0x04",
+            "positiveReadClock": "0x00",
+            "lsbFirst": "0x08",
+            "msbFirst": "0x00",
+            "writeTDI": "0x10",
+            "readTDO": "0x20",
+            "writeTMS": "0x40",
+
+            // GPIO commands
+            "writeDataLow": "0x80",             // 2 params, value and direction bytes
+            "writeDataHigh": "0x82",            // 2 params, value and direction bytes
+            "readDataLow": "0x81",              // Returns 1 byte
+            "readDataHigh": "0x83",             // Returns 1 byte
+
+            // CPU bus emulation mode
+            "cpuModeReadShort": "0x90",
+            "cpuModeReadExtended": "0x91",
+            "cpuModeWriteShort": "0x92",
+            "cpuModeWriteExtended": "0x93",
+
+            // High speed parts only
+            "disableDivideBy5": "0x8A",
+            "enableDivideBy5": "0x8B",
+            "enable3PhaseClock": "0x8C",
+            "disable3PhaseClock": "0x8D",
+            "clockWithoutData": "0x8E",         // One-byte length, in bits
+            "clockWithoutDataBytes": "0x8F",    // Two-byte length, in bytes
+            "clockUntilIOHigh": "0x94",
+            "clockUntilIOLow": "0x95",
+
+            // Other commands
+            "enableLoopback": "0x84",
+            "disableLoopback": "0x85",
+            "setClockDivisor": "0x86",          // Two-byte little endian divisor
+            "sendImmediate": "0x87",
+            "waitUntilIOHigh": "0x88",
+            "waitUntilIOLow": "0x89",
+
+            // Followed by the byte which caused the bad command error
+            "badCommandsResponse": "0xFA"
+        }
+    }
+}

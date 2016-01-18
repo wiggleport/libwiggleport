@@ -51,15 +51,68 @@
             "driver": "usb",
             "condition": ["==", "fpga.configured", false],
             "control": [
-                "usb.protocol.requests.reset",
-                "usb.protocol.requests.purgeRx",
-                "usb.protocol.requests.purgeTx",
+                // Reset interface A, but we won't be using it yet
+                {
+                    "requestType": "ftdi.requestTypes.ftdiOut",
+                    "requestId": "ftdi.requestIds.reset",
+                    "wValue": "ftdi.resetTypes.sio",
+                    "wIndex": "ftdi.interfaces.a.index"
+                },
+
+                // Reset interface B, prepare for using the MPSSE
+                {
+                    "requestType": "ftdi.requestTypes.ftdiOut",
+                    "requestId": "ftdi.requestIds.reset",
+                    "wValue": "ftdi.resetTypes.sio",
+                    "wIndex": "ftdi.interfaces.b.index"
+                },
+
+                // Purge buffers
+                {
+                    "requestType": "ftdi.requestTypes.ftdiOut",
+                    "requestId": "ftdi.requestIds.reset",
+                    "wValue": "ftdi.resetTypes.purgeTx",
+                    "wIndex": "ftdi.interfaces.b.index"
+                },
+                {
+                    "requestType": "ftdi.requestTypes.ftdiOut",
+                    "requestId": "ftdi.requestIds.reset",
+                    "wValue": "ftdi.resetTypes.purgeRx",
+                    "wIndex": "ftdi.interfaces.b.index"
+                },
+
+                // Enable flow control
+                {
+                    "requestType": "ftdi.requestTypes.ftdiOut",
+                    "requestId": "ftdi.requestIds.setFlowControl",
+                    "wValue": 0,
+                    "wIndex": ["|", "ftdi.interfaces.b.index", "ftdi.flowControlTypes.rtscts"]
+                },
+
+                // Enter MPSSE mode
+                {
+                    "#output-bitmask": "0x0B",
+                    "requestType": "ftdi.requestTypes.ftdiOut",
+                    "requestId": "ftdi.requestIds.setFlowControl",
+                    "wValue": ["|", "#output-bitmask", ["<<", "ftdi.bitmodes.mpsse", 8]],
+                    "wIndex": "ftdi.interfaces.b.index"
+                }
             ],
             "bulk": [
                 {
                     "endpoint": "ftdi.protocol.interfaces.b.endpoints.out",
-                    "stream": {
-                        "pattern": [],
+                    "stream": { 
+                        "patterns": [[
+
+                            {"condition": "blah"},
+                            "thing1",
+                            "thing2",
+                            {"onMatch": []}
+
+                            {"markInstant": "stream"},
+                            {"waitInstant": "stream"},
+
+                        ]],
                     }
                 },
                 {
@@ -84,7 +137,7 @@
             "bulk": [
                 {
                     "stream": "ftdi.streams.outputFIFO",
-                    "endpoint": "ftdi.protocol.interfaces.a.endpoints.out"
+                    "endpoint": "ftdi.interfaces.a.endpoints.out"
                 },
                 {
                     "stream": "ftdi.streams.inputFIFO",
@@ -100,6 +153,8 @@
 
     "prototype": {
 
+        "ftdi": { "class": "ftdi-protocol" },
+
         "fpga": {
             "configured": "#bool",
 
@@ -108,82 +163,6 @@
                 "buffer": 2
             }
         },
-
-        "ftdi": {
-
-            "streams": {
-                "mpsse": {
-                    "pattern": [
-                        "#mpsse-foo",
-                        "fpga.bitstream",
-                        "#mpsse-foo"
-                    ]
-                }
-            },
-
-            "protocol": {
-                // Definitions for communicating with the FT2232H chip
-
-                "requestTypes": {
-                    "endpointOut":        "0x00",
-                    "endpointIn":         "0x80",
-                    "usbStandard":        "0x00",
-                    "usbClass":           "0x20",
-                    "usbVendor":          "0x40",
-                    "recipientDevice":    "0x00",
-                    "recipientInterface": "0x01",
-                    "recipientEndpoint":  "0x02",
-                    "ftdiOut": ["|", "endpointOut", "usbVendor", "recipientDevice"],
-                    "ftdiIn":  ["|", "endpointIn", "usbVendor", "recipientDevice"]
-                },
-
-                "requestIds": {
-                    "reset":            "0x00",
-                    "setModemControl":  "0x01",
-                    "setFlowControl":   "0x02",
-                    "setBaudrate":      "0x03",
-                    "setData":          "0x04",
-                    "pollModemStatus":  "0x05",
-                    "setEventChar":     "0x06",
-                    "setErrorChar":     "0x07",
-                    "setLatencyTimer":  "0x09",
-                    "getLatencyTimer":  "0x0a",
-                    "setBitmode":       "0x0b",
-                    "readPins":         "0x0c"
-                },
-
-                "resetTypes": {
-                    "sio": 0,
-                    "purgeRx": 1,
-                    "purgeTx": 2
-                },
-
-                "interfaces": {
-                    "a": 1,
-                    "b": 2
-                },
-
-                "requests": {
-                    "reset": {
-                        "requestType": "requestTypes.ftdiOut",
-                        "requestId": "requestIds.reset",
-                        "valueWord": "resetTypes.sio",
-                        "indexWord": "interfaces.a"
-                    },
-                    "purgeRx": {
-                        "requestType": "requestTypes.ftdiOut",
-                        "requestId": "requestIds.reset",
-                        "valueWord": "resetTypes.purgeRx",
-                        "indexWord": "interfaces.a"
-                    },
-                    "purgeTx": {
-                        "requestType": "requestTypes.ftdiOut",
-                        "requestId": "requestIds.reset",
-                        "valueWord": "resetTypes.purgeTx",
-                        "indexWord": "interfaces.a"
-                    }
-                }
-            },
 
         "modes": {
             // Each mode is a mutually exclusive operating state (per USB device)
@@ -214,77 +193,7 @@
         }
     },
 
-    "fpga": {
-        "driver": "ice40",
-    },
-
-    "streams": [
-        "usbInterface.outputFIFO",
-
-    ],
-
-
-        "usbInterface": {
-
-            "outputFIFO": {
-                "endpoint": 0,
-            }
-
-            "inputFIFO": {
-                "endpoint": 0,
-            }
-
-            "configOut": {
-                "endpoint": 0,
-            }
-
-            "configIn": {
-                "endpoint": 0,
-            }
-
-
-            ""
-
-            "states"
-
-            // How modal does this need to be?
-            // How specific to this application?  -- should FPGA be optional, maybe?
-                // This could allow using a bare FT2232H with no FPGA for some apps?
-
-
-            ""
-        },
-
-        "fpga": {
-        }
-
-
-    }
-
-
-    // breadcrumbs
-    // how does FPGA configuration work, & interact with module loading lifecycle?
-    // how does stream bind to prototype
-    // patterns for FPGA config
-
-    // fpga loader and fpga data stream coexist physically; different libftdi modes
-
-
-    // What makes a stream?
-
-    // When do actions start= probe, fpga recompile, reload, reload complete/error
-
-
-    // Probe sequence: insert commands into a stream queue, option to load if results match
-
-    /*
-     * Module interface
-     *
-     * The module's interface describes what sort of slot it fits into, and when it can load.
-     * If this module finds an attachment point with matching "class" and "detect" details,
-     * the other objects here will be added to that attachment point.
-     */
-        "detect": {  },
+////////////////
 
         /*
          * The USB bridge provides byte-wide FIFO streams, one in each direction.
