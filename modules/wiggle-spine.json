@@ -20,100 +20,140 @@
         "deviceVersion": [":<=", "0x400", "#int"],
     },
 
-    // Tasks are units of functionality that can start and stop independently
-    "tasks": {
+    "prototype": {
 
-        // Generate and send an FPGA bitstream
-        "synthesis": {
-            "driver": "ice40",   // libwiggleport knows how to use yosys, arachne-pnr, and icestorm
-            "device": "1k",      // FPGA size; there's also an 8k available
-            "package": "tq144",
+        // Import FTDI protocol constants to help us talk to the FT2232H chip
+        "ftdi": { "@class": "ftdi-protocol" },
 
-            // When we finish, the new bitstream goes here
-            "bitstream": "fpga.configurationBuffer",
+        "fpga": {
+            // Assume the FPGA is unconfigured at first
+            "configured": ["#bool", false],
 
-            "inputs": [
-                "dmx.logic",
-                "sync.logic",
-                "usb.logic",
-                "mod1.logic",
-                "mod2.logic",
-                "mod3.logic",
-                "mod4.logic",
-                "mod5.logic",
-                "mod6.logic",
-                "mod7.logic"
-            ]
-        },
+            // Generate the bitstream for this board's FPGA
+            "synthesis": {
+                "@driver": "ice40",  // libwiggleport knows how to use yosys, arachne-pnr, and icestorm
+                "device": "1k",      // FPGA size; there's also an 8k available
+                "package": "tq144",
 
-        // Configuring the FPGA, using the FT2232H chip in MPSSE mode
-        "configuration": {
-            "driver": "usb",
-            "condition": ["==", "fpga.configured", false],
-            "control": [
-                // Reset interface A, but we won't be using it yet
-                {
-                    "requestType": "ftdi.requestTypes.ftdiOut",
-                    "requestId": "ftdi.requestIds.reset",
-                    "wValue": "ftdi.resetTypes.sio",
-                    "wIndex": "ftdi.interfaces.a.index"
+                "bitstream": {
+                    // A 512 kbit buffer holds two bitstreams with just a bit extra
+                    "@buffer": 524288
                 },
 
-                // Reset interface B, prepare for using the MPSSE
-                {
-                    "requestType": "ftdi.requestTypes.ftdiOut",
-                    "requestId": "ftdi.requestIds.reset",
-                    "wValue": "ftdi.resetTypes.sio",
-                    "wIndex": "ftdi.interfaces.b.index"
-                },
+                "inputs": [
+                    "dmx.logic",
+                    "sync.logic",
+                    "usb.logic",
+                    "mod1.logic",
+                    "mod2.logic",
+                    "mod3.logic",
+                    "mod4.logic",
+                    "mod5.logic",
+                    "mod6.logic",
+                    "mod7.logic"
+                ]
+            },
 
-                // Purge buffers
-                {
-                    "requestType": "ftdi.requestTypes.ftdiOut",
-                    "requestId": "ftdi.requestIds.reset",
-                    "wValue": "ftdi.resetTypes.purgeTx",
-                    "wIndex": "ftdi.interfaces.b.index"
-                },
-                {
-                    "requestType": "ftdi.requestTypes.ftdiOut",
-                    "requestId": "ftdi.requestIds.reset",
-                    "wValue": "ftdi.resetTypes.purgeRx",
-                    "wIndex": "ftdi.interfaces.b.index"
-                },
+            // Configuring the FPGA, using the FT2232H chip in MPSSE mode
+            "configuration": {
+                "@driver": "usb",
+                "condition": ["==", "configured", false],
+                "bulk": [ "commandStream", "replyStream" ],
 
-                // Enable flow control
-                {
-                    "requestType": "ftdi.requestTypes.ftdiOut",
-                    "requestId": "ftdi.requestIds.setFlowControl",
-                    "wValue": 0,
-                    "wIndex": ["|", "ftdi.interfaces.b.index", "ftdi.flowControlTypes.rtscts"]
-                },
+                "otherInterface": "ftdi.interfaces.a",
+                "configInterface": "ftdi.interfaces.b",
+                "outputBitmask": "0x0B",
 
-                // Enter MPSSE mode
-                {
-                    "#output-bitmask": "0x0B",
-                    "requestType": "ftdi.requestTypes.ftdiOut",
-                    "requestId": "ftdi.requestIds.setFlowControl",
-                    "wValue": ["|", "#output-bitmask", ["<<", "ftdi.bitmodes.mpsse", 8]],
-                    "wIndex": "ftdi.interfaces.b.index"
-                }
-            ],
-            "bulk": [
-                {
-                    "endpoint": "ftdi.protocol.interfaces.b.endpoints.out",
-                    "stream": { 
-                        "patterns": [[
+                "control": [
+                    // Reset the interface we aren't using
+                    {
+                        "requestType": "ftdi.requestTypes.ftdiOut",
+                        "requestId": "ftdi.requestIds.reset",
+                        "wValue": "ftdi.resetTypes.sio",
+                        "wIndex": "otherInterface.index"
+                    },
 
-                            {"condition": "blah"},
-                            "thing1",
-                            "thing2",
-                            {"onMatch": []}
+                    // Reset the configuration interface
+                    {
+                        "requestType": "ftdi.requestTypes.ftdiOut",
+                        "requestId": "ftdi.requestIds.reset",
+                        "wValue": "ftdi.resetTypes.sio",
+                        "wIndex": "configInterface.index"
+                    },
 
-                            {"markInstant": "stream"},
-                            {"waitInstant": "stream"},
+                    // Purge buffers
+                    {
+                        "requestType": "ftdi.requestTypes.ftdiOut",
+                        "requestId": "ftdi.requestIds.reset",
+                        "wValue": "ftdi.resetTypes.purgeTx",
+                        "wIndex": "configInterface.index"
+                    },
+                    {
+                        "requestType": "ftdi.requestTypes.ftdiOut",
+                        "requestId": "ftdi.requestIds.reset",
+                        "wValue": "ftdi.resetTypes.purgeRx",
+                        "wIndex": "configInterface.index"
+                    },
 
-                        ]],
+                    // Enable flow control
+                    {
+                        "requestType": "ftdi.requestTypes.ftdiOut",
+                        "requestId": "ftdi.requestIds.setFlowControl",
+                        "wValue": 0,
+                        "wIndex": ["|", "configInterface.index", "ftdi.flowControlTypes.rtscts"]
+                    },
+
+                    // Enter MPSSE mode
+                    {
+                        "requestType": "ftdi.requestTypes.ftdiOut",
+                        "requestId": "ftdi.requestIds.setFlowControl",
+                        "wValue": ["|", "outputBitmask", ["<<", "ftdi.bitmodes.mpsse", 8]],
+                        "wIndex": "configInterface.index"
                     }
+                ],
+
+                "commandStream": {
+                    // Bulk OUT endpoint, for MPSSE commands.
+                    "endpoint": "configInterface.endpoints.out",
+                    "@patterns": [
+                        // One pattern to do the configuration and retry if necessary
+                        [
+                            {"condition": "blah"},
+                        "thing1",
+                        "thing2",
+                        {"onMatch": []}
+
+                        {"markInstant": "stream"},
+                        {"waitInstant": "stream"},
+
+                        "ftdi.mpsse.readDataLow",
+                        "ftdi.mpsse.sendImmediate"
+                        {"label": "read-cdone"}
+
+                        // Pattern repeats after a delay, to retry if necessary
+                        {"delay": 0.25}
+                    ]],
+                },
+
+                "replyStream":
+                    // Bulk IN endpoint, for replies from the MPSSE
+                    {
+                        "endpoint": "configInterface.endpoints.in",
+                        "@patterns": [
+
+                            // Response from reading CDONE
+                            {"wait": "commandStream.read-cdone"}
+
+
+                                // fuck yeah labels! I think this solves sync problems with audio too-
+                                // you can choose to wait on another stream's label (when *that* stream
+                                // has an event) or you can choose to import another stream's labels into
+                                // your stream, synchronizing them along the way. The spine could publish
+                                // audio labels that modules can sync with.
+                        ]
+                    }
+                ]
+
                 },
                 {
                     "endpoint": "ftdi.protocol.interfaces.b.endpoints.in",
@@ -130,9 +170,17 @@
             ]
         },
 
+
+    },
+
+            }
+        },
+
+
+
         // Streaming data to and from the FPGA, using the FT2232H in synchronous FIFO mode
         "streaming": {
-            "driver": "usb",
+            "@driver": "usb",
             "condition": ["==", "fpga.configured", true],
             "bulk": [
                 {
@@ -147,49 +195,6 @@
             "control": [
 
             ],
-        }
-
-    },
-
-    "prototype": {
-
-        "ftdi": { "class": "ftdi-protocol" },
-
-        "fpga": {
-            "configured": "#bool",
-
-            "configurationBuffer": {
-                "width": 257760,
-                "buffer": 2
-            }
-        },
-
-        "modes": {
-            // Each mode is a mutually exclusive operating state (per USB device)
-            // We use the FT2232H chip differently in each mode.
-
-            "configuration": {
-                // For configuring the FPGA, we use Interface B in MPSSE mode
-
-                "setup": [
-
-                ],
-
-                "streams": [
-                ]
-            },
-
-            "normal": {
-                // In normal operation, we use high speed synchronous FIFO mode.
-                // This is on Interface A, but it takes over the internal resources
-                // used by both interfaces.
-
-                "setup": [
-                ],
-
-                "streams": [
-                ]
-            }
         }
     },
 
