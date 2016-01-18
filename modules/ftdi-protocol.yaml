@@ -67,6 +67,7 @@ prototype:
         d: { index: 4, endpoints: { in: 0x87, out: 0x08 }}
 
     # Multi-Protocol Synchronous Serial Engine commands
+    # See FTDI application note AP108
     mpsse:
 
         # Bits for building data shift commands

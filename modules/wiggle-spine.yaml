@@ -60,6 +60,7 @@ prototype:
             otherInterface: ftdi.interfaces.a
             configInterface: ftdi.interfaces.b
             outputBitmask: 0x0B
+            clockDivisor: 1         # 15 MHz, the fastest available below the FPGA's 25 MHz limit
 
             control:
                 # Reset the interface we aren't using
@@ -97,82 +98,36 @@ prototype:
                   wIndex: configInterface.index
 
             commandStream:
-                # Bulk OUT endpoint, for MPSSE commands.
+                # Bulk OUT endpoint, for MPSSE commands
                 endpoint: configInterface.endpoints.out
-                @patterns:
-                    -   # One pattern for configuration and retry if necessary
+                bitsPerItem: 8
+                @pattern:
+                        # Init clock divisor
+                        - ftdi.mpsse.disableDivideBy5
+                        - ftdi.mpsse.setClockDivisor
+                        - clockDivisor
+                        - [>>, clockDivisor, 8]
+
+                        - ftdi.mpsse.writeDataLow
+
+                        - [ |, ftdi.mpsse.writeTDI, ftdi.mpsse.
+                        - synthesis.bitstream
+
                         - ftdi.mpsse.readDataLow
                         - ftdi.mpsse.sendImmediate
                         - label: testConfigDone
+
+                        # Delay before the pattern loops and we retry if necessary
                         - delay: 0.25
 
             replyStream:
                 # Bulk IN endpoint, for replies from the MPSSE
-                endpoint: configInterface.endpoints.in,
-                @patterns:
-                    -   # Read the CDONE response
-                        - wait: commandStream.testConfigDone
-                        - [join, ..]
-                        - impulse: [ :==, configured, true ]
-
-#                     // One pattern to do the configuration and retry if necessary
-#                     [
-#                         {"condition": "blah"},
-#                     "thing1",
-#                     "thing2",
-#                     {"onMatch": []}
-
-#                     {"markInstant": "stream"},
-#                     {"waitInstant": "stream"},
-
-#                     "ftdi.mpsse.readDataLow",
-#                     "ftdi.mpsse.sendImmediate"
-#                     {"label": "read-cdone"}
-
-#                     // Pattern repeats after a delay, to retry if necessary
-#                     {"delay": 0.25}
-#                 ]],
-#             },
-
-#             "replyStream":
-#                 // Bulk IN endpoint, for replies from the MPSSE
-#                 {
-#                     "endpoint": "configInterface.endpoints.in",
-#                     "@patterns": [
-
-#                         // Response from reading CDONE
-#                         {"wait": "commandStream.read-cdone"}
-
-
-#                             // fuck yeah labels! I think this solves sync problems with audio too-
-#                             // you can choose to wait on another stream's label (when *that* stream
-#                             // has an event) or you can choose to import another stream's labels into
-#                             // your stream, synchronizing them along the way. The spine could publish
-#                             // audio labels that modules can sync with.
-#                     ]
-#                 }
-#             ]
-
-#             },
-#             {
-#                 "endpoint": "ftdi.protocol.interfaces.b.endpoints.in",
-#                 "stream": {
-#                     "match"
-
-#                        // How does this mesh with output patterns starting and stopping?
-#                        // is there a way to match beginning of stream?
-#                        // circular vs. linear patterns
-#                        // How does this interact with detection?
-#                        //    (think about default content of wigglemod class)
-#                 }
-#             }
-#         ]
-#     },
-
-
-# },
-
-#         }
+                endpoint: configInterface.endpoints.in
+                bitsPerItem: 8
+                @pattern:
+                    - wait: commandStream.testConfigDone
+                    - bit5: configured  # CDONE
+                      bit7: true        # CRESET
 #     },
 
 
