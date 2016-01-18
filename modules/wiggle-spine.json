@@ -17,7 +17,7 @@
         "vendorId": "0x1d50",
         "productId": "0x60ea",
         // Leave versions 4.0 and later reserved for future hardware configurations
-        "deviceVersion": [":<=", "0x400", "#int"],
+        "deviceVersion": ["&<=", "0x400", "&int"],
     },
 
     "prototype": {
@@ -27,7 +27,7 @@
 
         "fpga": {
             // Assume the FPGA is unconfigured at first
-            "configured": ["#bool", false],
+            "configured": ["&bool", false],
 
             // Generate the bitstream for this board's FPGA
             "synthesis": {
@@ -285,13 +285,13 @@
          */
         "pll": {
             // Oscillator is specified from 600-900 MHz
-            "frequency": [":>=", 600e6, [":<=", 900e6,
+            "frequency": ["&>=", 600e6, ["&<=", 900e6,
                             ["*", "crystal.frequency", "fraction.value"]]],
             "registers": "#fractional-divider-template",
             "fraction": {
                 "value": ["+", "whole", ["/", "numerator", "denominator"]],
-                "whole": [":>=", 15, [":<=", 90, "#int"]],
-                "numerator": [":>=", 0, [":<", "denominator"], "#int"],
+                "whole": ["&>=", 15, ["&<=", 90, "&int"]],
+                "numerator": ["&>=", 0, ["&<", "denominator"], "&int"],
                 "denominator": 1000000
                 // ^ The data sheet claims, without further explanation,
                 //   that the VCXO requires a denominator of 10^6.
@@ -305,10 +305,10 @@
             "frequency": ["/", "pll.frequency", "fraction.value"],
             "registers": "#fractional-divider-template",
             "fraction": {
-                "value": [":>=", 6, [":<=", 1800, ["+", "whole", ["/", "numerator", "denominator"]]]],
-                "whole": "#int",
-                "numerator": [":>=", 0, [":<", "denominator"], "#int"],
-                "denominator": [":>=", 1, [":<=", 1048575, "#int"]]
+                "value": ["&>=", 6, ["&<=", 1800, ["+", "whole", ["/", "numerator", "denominator"]]]],
+                "whole": "&int",
+                "numerator": ["&>=", 0, ["&<", "denominator"], "&int"],
+                "denominator": ["&>=", 1, ["&<=", 1048575, "&int"]]
             }
         },
 
@@ -322,7 +322,7 @@
         // Template for the Si5351 integer divider units MS6 and MS7
         "#integer-multisynth-template": {
             "frequency": ["/", "pll.frequency", "divisor"],
-            "divisor": [":>=", 6, [":<=", 254, ["*", 2, "#int"]]]
+            "divisor": ["&>=", 6, ["&<=", 254, ["*", 2, "&int"]]]
         },
 
         "ms6": "#integer-multisynth-template",
@@ -338,7 +338,7 @@
 
         "#r-divider-template": {
             "value": ["<<", 1, "register"],
-            "register": [":>=", 0, [":<=", 7, "#int"]]
+            "register": ["&>=", 0, ["&<=", 7, "&int"]]
         },
 
         "clk0": {
