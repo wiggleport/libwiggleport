@@ -1,0 +1,23 @@
+#
+# The "Wiggle Out" module has 2x speaker outputs, driven by
+# the TI TAS5760 digital-input class D amplifier. Output power
+# depends on speaker impedance and power supply voltage,
+# typically 20-40 watts per channel.
+#
+# The TAS5760 has I2S audio and I2C control ports, which we
+# can glue to the internal streams in the Wiggle Spine. The
+# module's high speed synchronous data port is used as I2S
+# data out, and the other necessary sync signals are derived
+# from the outputCounter.
+#
+
+name: wiggle-out
+version: 1.0.0
+description: Wiggle Out is a 2-channel class D amplifier
+homepage: http://wiggleport.org
+license: MIT
+files:
+    - wiggle-out.v
+
+class: wigglemod
+prototype: {}

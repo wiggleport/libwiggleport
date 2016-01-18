@@ -4,9 +4,9 @@ description: Definitions for the USB protocol used by FTDI serial/parallel inter
 
 # This class can be instantiated locally by interface boards that use FTDI chips
 class: ftdi-protocol
-prototype: {
+prototype:
 
-    requestTypes: {
+    requestTypes:
         # USB standard request types
         endpointOut:        0x00
         endpointIn:         0x80
@@ -18,19 +18,10 @@ prototype: {
         recipientEndpoint:  0x02
 
         # Combinations used for normal FTDI requests
-        ftdiOut: [ |
-            endpointOut
-            usbVendor
-            recipientDevice
-        ]
-        ftdiIn: [ |
-            endpointIn
-            usbVendor
-            recipientDevice
-        ]
-    }
+        ftdiOut:    [ |, endpointOut, usbVendor, recipientDevice ]
+        ftdiIn:     [ |, endpointIn, usbVendor, recipientDevice ]
 
-    requestIds: {
+    requestIds:
         reset:            0x00
         setModemControl:  0x01
         setFlowControl:   0x02
@@ -46,22 +37,19 @@ prototype: {
         readEEPROM:       0x90
         writeEEPROM:      0x91
         eraseEEPROM:      0x92
-    }
 
-    resetTypes: {
+    resetTypes:
         sio:        0
         purgeRx:    1
         purgeTx:    2
-    }
 
-    flowControlTypes: {
+    flowControlTypes:
         disabled:   0x000
         rtscts:     0x100
         dtrdsr:     0x200
         xonxoff:    0x400
-    }
 
-    bitmodes: {
+    bitmodes:
         normal:       0x00
         asyncBitbang: 0x01
         mpsse:        0x02
@@ -71,17 +59,15 @@ prototype: {
         cbus:         0x20
         syncFIFO:     0x40
         ft1284:       0x80
-    }
 
-    interfaces: {
-        a: { index: 1, endpoints: { in: "0x81", out: "0x02" }}
-        b: { index: 2, endpoints: { in: "0x83", out: "0x04" }}
-        c: { index: 3, endpoints: { in: "0x85", out: "0x06" }}
-        d: { index: 4, endpoints: { in: "0x87", out: "0x08" }}
-    }
+    interfaces:
+        a: { index: 1, endpoints: { in: 0x81, out: 0x02 }}
+        b: { index: 2, endpoints: { in: 0x83, out: 0x04 }}
+        c: { index: 3, endpoints: { in: 0x85, out: 0x06 }}
+        d: { index: 4, endpoints: { in: 0x87, out: 0x08 }}
 
     # Multi-Protocol Synchronous Serial Engine commands
-    mpsse: {
+    mpsse:
 
         # Bits for building data shift commands
         negativeWriteClock:     0x01
@@ -128,5 +114,3 @@ prototype: {
 
         # Followed by the byte which caused the bad command error
         badCommandResponse:     0xFA
-    }
-}
