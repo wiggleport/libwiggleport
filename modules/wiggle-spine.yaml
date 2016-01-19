@@ -16,7 +16,7 @@ match:
     productId:  0x60ea
 
     # Leave versions 4.0 and later reserved for future hardware configurations
-    deviceVersion: [ :<=, 0x400, :int ]
+    deviceVersion: { int: 0, <=: 0x400 }
 
 prototype:
 
@@ -26,7 +26,7 @@ prototype:
 
     fpga:
         # Assume the FPGA is unconfigured at first
-        configured: [ :bool, false ]
+        configured: { bool: false }
 
         # Generate the bitstream for this board's FPGA
         synthesis:
@@ -35,8 +35,8 @@ prototype:
             package: tq144
 
             bitstream:
-                # A 512 kbit buffer holds two bitstreams with just a bit extra
-                @buffer: 524288
+                bitsPerItem: 257760
+                @buffer: { items: 2 }
 
             inputs:
                 - dmx.logic
@@ -54,48 +54,57 @@ prototype:
         configuration:
 
             @driver: usb
-            condition: [ ==, configured, false ]
+            condition: { ==: [configured, false] }
             bulk: [ commandStream, replyStream ]
 
             otherInterface: ftdi.interfaces.a
             configInterface: ftdi.interfaces.b
             outputBitmask: 0x0B
             clockDivisor: 1         # 15 MHz, the fastest available below the FPGA's 25 MHz limit
+            trailingBytes: 8        # Extra clocks to let the FPGA finish
 
             control:
-                # Reset the interface we aren't using
-                - requestType: ftdi.requestTypes.ftdiOut
-                  requestId: ftdi.requestIds.reset
-                  wValue: ftdi.resetTypes.sio
-                  wIndex: otherInterface.index
+                -   # Reset the interface we aren't using
+                    requestType: ftdi.requestTypes.ftdiOut
+                    requestId: ftdi.requestIds.reset
+                    wValue: ftdi.resetTypes.sio
+                    wIndex: otherInterface.index
 
-                # Reset the configuration interface
-                - requestType: ftdi.requestTypes.ftdiOut
-                  requestId: ftdi.requestIds.reset
-                  wValue: ftdi.resetTypes.sio
-                  wIndex: configInterface.index
+                -   # Reset the configuration interface
+                    requestType: ftdi.requestTypes.ftdiOut
+                    requestId: ftdi.requestIds.reset
+                    wValue: ftdi.resetTypes.sio
+                    wIndex: configInterface.index
 
-                # Purge buffers
-                - requestType: ftdi.requestTypes.ftdiOut
-                  requestId: ftdi.requestIds.reset
-                  wValue: ftdi.resetTypes.purgeTx
-                  wIndex: configInterface.index
-                - requestType: ftdi.requestTypes.ftdiOut
-                  requestId: ftdi.requestIds.reset
-                  wValue: ftdi.resetTypes.purgeRx
-                  wIndex: configInterface.index
+                -   # Purge TX buffer
+                    requestId: ftdi.requestIds.reset
+                    wValue: ftdi.resetTypes.purgeTx
+                    wIndex: configInterface.index
 
-                # Enable flow control
-                - requestType: ftdi.requestTypes.ftdiOut
-                  requestId: ftdi.requestIds.setFlowControl
-                  wValue: 0
-                  wIndex: [ |, configInterface.index, ftdi.flowControlTypes.rtscts ]
+                -   # Purge RX buffer
+                    requestType: ftdi.requestTypes.ftdiOut
+                    requestId: ftdi.requestIds.reset
+                    wValue: ftdi.resetTypes.purgeRx
+                    wIndex: configInterface.index
 
-                # Enter MPSSE mode
-                - requestType: ftdi.requestTypes.ftdiOut
-                  requestId: ftdi.requestIds.setFlowControl
-                  wValue: [ |, outputBitmask, [ <<, ftdi.bitmodes.mpsse, 8 ] ]
-                  wIndex: configInterface.index
+                -   # Enable flow control
+                    requestType: ftdi.requestTypes.ftdiOut
+                    requestId: ftdi.requestIds.setFlowControl
+                    wValue: 0
+                    wIndex:
+                        or:
+                            - configInterface.index
+                            - ftdi.flowControlTypes.rtscts
+
+                -   # Enter MPSSE mode
+                    requestType: ftdi.requestTypes.ftdiOut
+                    requestId: ftdi.requestIds.setFlowControl
+                    wValue:
+                        or:
+                            - outputBitmask
+                            - shl: [ftdi.bitmodes.mpsse, 8]
+                            - shr: [synthesis.bitstream.bitsPerItem, 11]
+                    wIndex: configInterface.index
 
             commandStream:
                 # Bulk OUT endpoint, for MPSSE commands
@@ -106,13 +115,35 @@ prototype:
                         - ftdi.mpsse.disableDivideBy5
                         - ftdi.mpsse.setClockDivisor
                         - clockDivisor
-                        - [>>, clockDivisor, 8]
+                        - shr: [clockDivisor, 8]
 
+                        # Init GPIO state
                         - ftdi.mpsse.writeDataLow
 
-                        - [ |, ftdi.mpsse.writeTDI, ftdi.mpsse.
+                        # Shift data bytes out
+                        - or:
+                            - ftdi.mpsse.writeTDI
+                            - ftdi.mpsse.negativeWriteClock
+                            - ftdi.mpsse.byteTransferMode
+                            - ftdi.mpsse.msbFirst
+                        - shr: [synthesis.bitstream.bitsPerItem, 3]
+                        - shr: [synthesis.bitstream.bitsPerItem, 11]
+
+                        # Send the buffered bitstream; waits for synthesis if necessary
                         - synthesis.bitstream
 
+                        # Clock out dummy bits to let the FPGA finish
+                        - ftdi.mpsse.clockoutBytes
+                        - trailingBytes
+                        - shr: [trailingBytes, 8]
+
+                    # note: Data types
+                    # at this point, what is the difference if any between
+                    # a state imperative like 'label' and an operator like 'shr'?
+                    # These both need to be loadable into the same kind of
+                    # expression node (supports plain values, operators, constraints, refs to streams or other expressions)
+
+                        # Asynchronously read CDONE to see if that worked
                         - ftdi.mpsse.readDataLow
                         - ftdi.mpsse.sendImmediate
                         - label: testConfigDone

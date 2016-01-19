@@ -17,7 +17,8 @@ description: Wiggle Out is a 2-channel class D amplifier
 homepage: http://wiggleport.org
 license: MIT
 files:
-    - wiggle-out.v
+  - wiggle-out.v
 
 class: wigglemod
-prototype: {}
+prototype:
+    wubbalubba: dub dub

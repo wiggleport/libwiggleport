@@ -18,8 +18,8 @@ prototype:
         recipientEndpoint:  0x02
 
         # Combinations used for normal FTDI requests
-        ftdiOut:    [ |, endpointOut, usbVendor, recipientDevice ]
-        ftdiIn:     [ |, endpointIn, usbVendor, recipientDevice ]
+        ftdiOut:    { or: [ endpointOut, usbVendor, recipientDevice ] }
+        ftdiIn:     { or: [ endpointIn,  usbVendor, recipientDevice ] }
 
     requestIds:
         reset:            0x00
