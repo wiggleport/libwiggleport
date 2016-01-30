@@ -40,9 +40,12 @@ void wigl_context_unref(wigl_context* ctx);
 //   (By default, libwiggleport loads a standard set of packages. Most programs
 //    won't need the package management functions.)
 
-bool wigl_package_load(wigl_context* ctx, const char* json_content, const char* json_files, char** error);
+bool wigl_package_load(wigl_context* ctx, const char* json_content, const char* json_fileset, char** error);
+bool wigl_package_load_yaml(wigl_context* ctx, const char* yaml_content, const char* json_fileset, char** error);
 bool wigl_package_load_file(wigl_context* ctx, const char* path, char** error);
+
 const char* wigl_package_name(const wigl_context* ctx, int index);
+const char* wigl_package_version(const wigl_context* ctx, const char* name);
 const char* wigl_package_json(const wigl_context* ctx, const char* name);
 
 // Enumerator -- find hardware models, and get hotplug notifications

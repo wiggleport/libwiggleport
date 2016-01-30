@@ -1,0 +1,18 @@
+[submodule "external/rapidjson"]
+	path = external/rapidjson
+	url = git@github.com:miloyip/rapidjson.git
+[submodule "external/libusb"]
+	path = external/libusb
+	url = git@github.com:libusb/libusb.git
+[submodule "external/yosys"]
+	path = external/yosys
+	url = git@github.com:cliffordwolf/yosys.git
+[submodule "external/icestorm"]
+	path = external/icestorm
+	url = git@github.com:cliffordwolf/icestorm.git
+[submodule "external/arachne-pnr"]
+	path = external/arachne-pnr
+	url = git@github.com:cseed/arachne-pnr.git
+[submodule "external/yaml-cpp"]
+	path = external/yaml-cpp
+	url = git@github.com:jbeder/yaml-cpp.git

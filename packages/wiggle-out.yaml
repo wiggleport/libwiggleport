@@ -1,4 +1,11 @@
 #
+# Copyright (c) 2016 Micah Elizabeth Scott
+#
+# Wiggleport is free software; you can redistribute it and/or modify
+# it under the terms of the MIT license. See LICENSE for details.
+#
+
+#
 # The "Wiggle Out" module has 2x speaker outputs, driven by
 # the TI TAS5760 digital-input class D amplifier. Output power
 # depends on speaker impedance and power supply voltage,
