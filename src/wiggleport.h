@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,7 +74,7 @@ const char* wigl_tuple_string(const wigl_tuple* tuple, int index, char** error);
 // Action -- a change that can be applied to the model
 
 wigl_action* wigl_action_new(const wigl_model* model, const char* json_dict, char** error);
-void wigl_action_unref(wigl_action* ac);
+void wigl_action_delete(wigl_action* ac);
 
 bool wigl_action_set_int(wigl_action* ac, const char* name, int64_t value, char** error);
 bool wigl_action_set_number(wigl_action* ac, const char* name, double value, char** error);
@@ -83,23 +84,22 @@ wigl_schedule* wigl_action_schedule(wigl_action* ac, const char* json_options, c
 
 // Schedule -- things happening at a particular time across one or more streams
 
-void wigl_schedule_unref(wigl_schedule* sched);
+void wigl_schedule_delete(wigl_schedule* sched);
 const char* wigl_schedule_json(const wigl_schedule* sched);
 
 bool wigl_schedule_has_finished(const wigl_schedule* sched);
+void wigl_schedule_wait(const wigl_schedule* sched);
 void wigl_schedule_notify(wigl_schedule* sched, wigl_schedule_cb* cb, void* cb_data);
 
 // Stream -- real-time I/O interface
 
-wigl_stream* wigl_stream_open(wigl_model* model, const char* name, const char* mode, char** error);
-void wigl_stream_close(wigl_stream* st);
+wigl_stream* wigl_stream_new(wigl_model* model, const char* json_options, char** error);
+void wigl_stream_delete(wigl_stream* st);
 const char* wigl_stream_json(const wigl_stream* st);
 
-void wigl_stream_notify(wigl_stream* st, wigl_stream_cb* cb, void* cb_data);
-
-void wigl_stream_read();
-void wigl_stream_write();
-
+uint64_t wigl_stream_clock(const wigl_stream* st);
+wigl_schedule* wigl_stream_read(wigl_stream* st, uint8_t *buffer, size_t byte_count, uint64_t time_ref);
+wigl_schedule* wigl_stream_write(wigl_stream* st, const uint8_t *buffer, size_t byte_count, uint64_t time_ref);
 
 #ifdef __cplusplus
 }  // extern "C"
