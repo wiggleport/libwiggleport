@@ -10,6 +10,8 @@ option(WIGGLEPORT_BUILD_DOC "Build libwiggleport documentation." ON)
 option(WIGGLEPORT_BUILD_TESTS "Build libwiggleport unit tests." ON)
 option(WIGGLEPORT_BUILD_UTILS "Build wiggleport command line utilities." ON)
 
+add_subdirectory(external)
+
 if (WIGGLEPORT_BUILD_DOC)
 	add_subdirectory(doc)
 endif()
